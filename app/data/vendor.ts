@@ -1,0 +1,40 @@
+export const vendors = [
+  {
+    id: "vendor-001",
+    businessName: "Royal Events & Rentals",
+    slug: "royal-events-rentals",
+    category: "Rentals",
+    city: "Lagos",
+    region: "Lagos",
+    rating: 4.8,
+    customerCount: 320,
+    imageUrl: "/vendors/royal-events.jpg",
+    verified: true,
+  },
+
+  {
+    id: "vendor-002",
+    businessName: "Tasty Bites Catering",
+    slug: "tasty-bites-catering",
+    category: "Catering",
+    city: "Lagos",
+    region: "Lagos",
+    rating: 4.7,
+    customerCount: 280,
+    imageUrl: "/vendors/tasty-bites.jpg",
+    verified: true,
+  },
+
+  {
+    id: "vendor-003",
+    businessName: "VibeTunes Events",
+    slug: "vibetunes-events",
+    category: "Sound",
+    city: "Lagos",
+    region: "Lagos",
+    rating: 4.8,
+    customerCount: 410,
+    imageUrl: "/vendors/vibetunes.jpg",
+    verified: true,
+  },
+];
