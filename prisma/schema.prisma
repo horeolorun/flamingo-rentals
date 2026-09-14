@@ -62,8 +62,15 @@ model VendorProfile {
   id     String @id @default(cuid())
   userId String @unique
 
-  businessName    String
+  // Completed later during vendor onboarding
+  businessName String?
+
+  // Temporary legacy field.
+  // We will remove this once all old code uses segments.
   primaryCategory String?
+
+  // A vendor can belong to multiple marketplace segments
+  segments String[] @default([])
 
   kycStatus    VerificationStatus @default(NOT_STARTED)
   payoutStatus VerificationStatus @default(NOT_STARTED)

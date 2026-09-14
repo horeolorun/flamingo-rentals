@@ -5,6 +5,7 @@ import {
   usePathname,
   useRouter,
 } from "next/navigation";
+
 import {
   useEffect,
   useState,
@@ -19,6 +20,8 @@ type CurrentUser = {
 };
 
 export default function Header() {
+ 
+
   const router = useRouter();
   const pathname = usePathname();
 
@@ -108,6 +111,16 @@ export default function Header() {
     }
   }
 
+  function navClass(href: string) {
+  const active =
+    href === "/"
+      ? pathname === "/"
+      : pathname.startsWith(href);
+
+  return active
+    ? "text-sm font-semibold text-[#4f2a91]"
+    : "text-sm font-medium text-gray-600 transition hover:text-[#4f2a91]";
+}
   return (
     <header className="border-b border-gray-100 bg-white">
       <div className="mx-auto flex h-[74px] max-w-7xl items-center justify-between px-6">
@@ -165,11 +178,11 @@ export default function Header() {
             </Link>
 
             <Link
-              href="/vendor/orders"
-              className="text-sm font-medium text-gray-600 transition hover:text-[#4f2a91]"
-            >
-              Orders
-            </Link>
+  href="/vendor/bookings"
+  className={navClass("/vendor/bookings")}
+>
+  Bookings
+</Link>
 
             <Link
               href="/vendor/analytics"

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { db } from "../../../lib/db";
+
+import { db } from "@/app/lib/db";
+import { vendorSegments } from "@/app/data/vendorSegments";
 
 export const runtime = "nodejs";
 
@@ -7,17 +9,33 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const {
-      fullName,
-      email,
-      phone,
-      accountType,
-      businessName,
-      primaryCategory,
-    } = body;
+    const fullName = String(
+      body.fullName ?? ""
+    ).trim();
 
-    // Basic validation
-    if (!fullName?.trim()) {
+    const role =
+      body.role === "VENDOR"
+        ? "VENDOR"
+        : "CUSTOMER";
+
+    const email = body.email
+      ? String(body.email)
+          .trim()
+          .toLowerCase()
+      : null;
+
+    const phone = body.phone
+      ? String(body.phone).trim()
+      : null;
+
+    const submittedSegments =
+      Array.isArray(body.segments)
+        ? body.segments.map((segment: unknown) =>
+            String(segment)
+          )
+        : [];
+
+    if (!fullName) {
       return NextResponse.json(
         {
           success: false,
@@ -29,11 +47,12 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!email?.trim() && !phone?.trim()) {
+    if (!email && !phone) {
       return NextResponse.json(
         {
           success: false,
-          message: "Email or phone number is required",
+          message:
+            "Email or phone number is required",
         },
         {
           status: 400,
@@ -41,14 +60,36 @@ export async function POST(request: Request) {
       );
     }
 
+    if (email && phone) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Please use either email or phone number",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const validSegments =
+      submittedSegments.filter((segment) =>
+        vendorSegments.includes(
+          segment as
+            (typeof vendorSegments)[number]
+        )
+      );
+
     if (
-      accountType !== "customer" &&
-      accountType !== "vendor"
+      role === "VENDOR" &&
+      validSegments.length === 0
     ) {
       return NextResponse.json(
         {
           success: false,
-          message: "Invalid account type",
+          message:
+            "Please select at least one business segment",
         },
         {
           status: 400,
@@ -56,96 +97,47 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      accountType === "vendor" &&
-      !businessName?.trim()
-    ) {
+    const existingUser =
+      await db.user.findFirst({
+        where: {
+          OR: [
+            ...(email
+              ? [{ email }]
+              : []),
+
+            ...(phone
+              ? [{ phone }]
+              : []),
+          ],
+        },
+      });
+
+    if (existingUser) {
       return NextResponse.json(
         {
           success: false,
-          message: "Business name is required for vendors",
+          message:
+            "An account already exists with these details",
         },
         {
-          status: 400,
+          status: 409,
         }
       );
     }
 
-    const normalizedEmail =
-      email?.trim().toLowerCase() || null;
-
-    const normalizedPhone =
-      phone?.trim() || null;
-
-    // Check for duplicate email
-    if (normalizedEmail) {
-      const existingEmail =
-        await db.user.findUnique({
-          where: {
-            email: normalizedEmail,
-          },
-        });
-
-      if (existingEmail) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "An account with this email already exists",
-          },
-          {
-            status: 409,
-          }
-        );
-      }
-    }
-
-    // Check for duplicate phone
-    if (normalizedPhone) {
-      const existingPhone =
-        await db.user.findUnique({
-          where: {
-            phone: normalizedPhone,
-          },
-        });
-
-      if (existingPhone) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "An account with this phone number already exists",
-          },
-          {
-            status: 409,
-          }
-        );
-      }
-    }
-
-    // Create the customer or vendor
     const user = await db.user.create({
       data: {
-        fullName: fullName.trim(),
+        fullName,
+        email,
+        phone,
+        role,
 
-        email: normalizedEmail,
-        phone: normalizedPhone,
-
-        role:
-          accountType === "vendor"
-            ? "VENDOR"
-            : "CUSTOMER",
-
-        ...(accountType === "vendor"
+        ...(role === "VENDOR"
           ? {
               vendorProfile: {
                 create: {
-                  businessName:
-                    businessName.trim(),
-
-                  primaryCategory:
-                    primaryCategory?.trim() ||
-                    null,
+                  segments:
+                    validSegments,
                 },
               },
             }
@@ -162,19 +154,19 @@ export async function POST(request: Request) {
         success: true,
 
         message:
-          accountType === "vendor"
-            ? "Vendor account created successfully"
-            : "Customer account created successfully",
+          "Account created successfully",
 
         user: {
           id: user.id,
-          fullName: user.fullName,
+          fullName:
+            user.fullName,
           email: user.email,
           phone: user.phone,
           role: user.role,
-          status: user.status,
-          vendorProfile:
-            user.vendorProfile,
+
+          segments:
+            user.vendorProfile
+              ?.segments ?? [],
         },
       },
       {
@@ -191,7 +183,7 @@ export async function POST(request: Request) {
       {
         success: false,
         message:
-          "Something went wrong while creating the account",
+          "Could not create account",
       },
       {
         status: 500,
