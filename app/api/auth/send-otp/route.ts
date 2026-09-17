@@ -6,15 +6,25 @@ import {
 import { NextResponse } from "next/server";
 
 import { db } from "@/app/lib/db";
+import { sendOtpEmail } from "../../../lib/email";
 
 export const runtime = "nodejs";
 
 const OTP_EXPIRY_MINUTES = 10;
 
 function hashOtp(code: string) {
+  const secret =
+    process.env.OTP_SECRET;
+
+  if (!secret) {
+    throw new Error(
+      "OTP_SECRET is not configured."
+    );
+  }
+
   return createHmac(
     "sha256",
-    process.env.OTP_SECRET!
+    secret
   )
     .update(code)
     .digest("hex");
@@ -38,7 +48,7 @@ export async function POST(
         {
           success: false,
           message:
-            "Email address is required",
+            "Email address is required.",
         },
         {
           status: 400,
@@ -58,7 +68,7 @@ export async function POST(
         {
           success: false,
           message:
-            "Account not found",
+            "Account not found.",
         },
         {
           status: 404,
@@ -74,7 +84,7 @@ export async function POST(
         {
           success: false,
           message:
-            "This email address is already verified",
+            "This email address is already verified.",
         },
         {
           status: 409,
@@ -90,42 +100,72 @@ export async function POST(
     const codeHash =
       hashOtp(code);
 
-    const expiresAt = new Date(
-      Date.now() +
-        OTP_EXPIRY_MINUTES *
-          60 *
-          1000
-    );
+    const expiresAt =
+      new Date(
+        Date.now() +
+          OTP_EXPIRY_MINUTES *
+            60 *
+            1000
+      );
 
-    // Remove previous unused email OTPs
-    // for this account.
-   await db.verificationCode.deleteMany({
-  where: {
-    userId: user.id,
-    channel: "EMAIL",
-    purpose: "SIGNUP",
-    usedAt: null,
-  },
-});
+    await db.verificationCode.deleteMany({
+      where: {
+        userId:
+          user.id,
 
-  await db.verificationCode.create({
-  data: {
-    userId: user.id,
-    codeHash,
-    channel: "EMAIL",
-    purpose: "SIGNUP",
-    destination: email,
-    expiresAt,
-  },
-});
+        channel:
+          "EMAIL",
 
+        purpose:
+          "SIGNUP",
 
-    /*
-      REAL EMAIL PROVIDER GOES HERE LATER.
+        usedAt:
+          null,
+      },
+    });
 
-      For development we return devOtp
-      so you can continue testing.
-    */
+    const verificationCode =
+      await db.verificationCode.create({
+        data: {
+          userId:
+            user.id,
+
+          codeHash,
+
+          channel:
+            "EMAIL",
+
+          purpose:
+            "SIGNUP",
+
+          destination:
+            email,
+
+          expiresAt,
+        },
+      });
+
+    try {
+      await sendOtpEmail({
+        to: email,
+        code,
+        purpose:
+          "SIGNUP",
+      });
+    } catch (emailError) {
+      /*
+        Remove the OTP if the email
+        could not actually be sent.
+      */
+      await db.verificationCode.delete({
+        where: {
+          id:
+            verificationCode.id,
+        },
+      });
+
+      throw emailError;
+    }
 
     if (
       process.env.NODE_ENV !==
@@ -139,7 +179,7 @@ export async function POST(
         success: true,
 
         message:
-          "Verification code generated",
+          "Verification code sent to your email.",
 
         devOtp:
           code,
@@ -150,7 +190,7 @@ export async function POST(
       success: true,
 
       message:
-        "Verification code sent to your email",
+        "Verification code sent to your email.",
     });
   } catch (error) {
     console.error(
@@ -158,11 +198,20 @@ export async function POST(
       error
     );
 
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Unknown server error";
+
     return NextResponse.json(
       {
         success: false,
+
         message:
-          "Could not send verification code",
+          process.env.NODE_ENV ===
+          "development"
+            ? message
+            : "Could not send verification code.",
       },
       {
         status: 500,

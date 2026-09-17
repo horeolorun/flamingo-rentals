@@ -6,15 +6,25 @@ import {
 import { NextResponse } from "next/server";
 
 import { db } from "@/app/lib/db";
+import { sendOtpEmail } from "../../../../lib/email";
 
 export const runtime = "nodejs";
 
 const OTP_EXPIRY_MINUTES = 10;
 
 function hashOtp(code: string) {
+  const secret =
+    process.env.OTP_SECRET;
+
+  if (!secret) {
+    throw new Error(
+      "OTP_SECRET is not configured."
+    );
+  }
+
   return createHmac(
     "sha256",
-    process.env.OTP_SECRET!
+    secret
   )
     .update(code)
     .digest("hex");
@@ -37,6 +47,7 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
+
           message:
             "Email address is required.",
         },
@@ -54,24 +65,18 @@ export async function POST(
       });
 
     /*
-      Do not reveal whether an email
-      exists in the Flamingo database.
+      Do not reveal whether the
+      email exists in the database.
     */
-    if (!user) {
-      return NextResponse.json({
-        success: true,
-        message:
-          "If an account exists for that email, a reset code has been generated.",
-      });
-    }
-
     if (
+      !user ||
       user.status === "SUSPENDED"
     ) {
       return NextResponse.json({
         success: true,
+
         message:
-          "If an account exists for that email, a reset code has been generated.",
+          "If an account exists for that email, a reset code has been sent.",
       });
     }
 
@@ -91,29 +96,10 @@ export async function POST(
             1000
       );
 
-    /*
-      Remove any old unused
-      password-reset codes.
-    */
     await db.verificationCode.deleteMany({
       where: {
-        userId: user.id,
-        channel: "EMAIL",
-        purpose:
-          "PASSWORD_RESET",
-        usedAt: null,
-      },
-    });
-
-    /*
-      Save the new reset code.
-    */
-    await db.verificationCode.create({
-      data: {
         userId:
           user.id,
-
-        codeHash,
 
         channel:
           "EMAIL",
@@ -121,20 +107,59 @@ export async function POST(
         purpose:
           "PASSWORD_RESET",
 
-        destination:
-          email,
-
-        expiresAt,
+        usedAt:
+          null,
       },
     });
 
     /*
-      Later, the real email provider
-      will send this code.
-
-      For development, return it so
-      we can test the reset flow.
+      Store the OTP BEFORE sending
+      the email.
     */
+    const verificationCode =
+      await db.verificationCode.create({
+        data: {
+          userId:
+            user.id,
+
+          codeHash,
+
+          channel:
+            "EMAIL",
+
+          purpose:
+            "PASSWORD_RESET",
+
+          destination:
+            email,
+
+          expiresAt,
+        },
+      });
+
+    try {
+      await sendOtpEmail({
+        to: email,
+        code,
+
+        purpose:
+          "PASSWORD_RESET",
+      });
+    } catch (emailError) {
+      /*
+        Don't leave behind an OTP
+        that the user never received.
+      */
+      await db.verificationCode.delete({
+        where: {
+          id:
+            verificationCode.id,
+        },
+      });
+
+      throw emailError;
+    }
+
     if (
       process.env.NODE_ENV !==
       "production"
@@ -147,7 +172,7 @@ export async function POST(
         success: true,
 
         message:
-          "Password reset code generated.",
+          "Password reset code sent.",
 
         devOtp:
           code,
