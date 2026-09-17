@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
+
 
 export default function PostsPage() {
   const response = fetch("https://jsonplaceholder.typicode.com/posts"); 

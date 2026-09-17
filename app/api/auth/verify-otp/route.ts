@@ -1,35 +1,46 @@
-import { NextResponse } from "next/server";
-import { createHmac } from "crypto";
+import {
+  createHmac,
+  timingSafeEqual,
+} from "crypto";
 
-import { db } from "../../../lib/db";
+import { NextResponse } from "next/server";
+
+import { db } from "@/app/lib/db";
 
 export const runtime = "nodejs";
 
 function hashOtp(code: string) {
-  const secret = process.env.OTP_SECRET;
-
-  if (!secret) {
-    throw new Error("OTP_SECRET is not configured");
-  }
-
-  return createHmac("sha256", secret)
+  return createHmac(
+    "sha256",
+    process.env.OTP_SECRET!
+  )
     .update(code)
     .digest("hex");
 }
 
-export async function POST(request: Request) {
+export async function POST(
+  request: Request
+) {
   try {
-    const body = await request.json();
+    const body =
+      await request.json();
 
-    const identifier = body.identifier?.trim();
-    const code = body.code?.trim();
+    const email = String(
+      body.email ?? ""
+    )
+      .trim()
+      .toLowerCase();
 
-    if (!identifier || !code) {
+    const code = String(
+      body.code ?? ""
+    ).trim();
+
+    if (!email || !code) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Email/phone and verification code are required",
+            "Email and verification code are required",
         },
         {
           status: 400,
@@ -37,40 +48,19 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!/^\d{6}$/.test(code)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Verification code must contain 6 digits",
+    const user =
+      await db.user.findUnique({
+        where: {
+          email,
         },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const isEmail = identifier.includes("@");
-
-    const normalizedIdentifier = isEmail
-      ? identifier.toLowerCase()
-      : identifier;
-
-    const user = await db.user.findFirst({
-      where: isEmail
-        ? {
-            email: normalizedIdentifier,
-          }
-        : {
-            phone: normalizedIdentifier,
-          },
-    });
+      });
 
     if (!user) {
       return NextResponse.json(
         {
           success: false,
-          message: "Account not found",
+          message:
+            "Account not found",
         },
         {
           status: 404,
@@ -79,28 +69,26 @@ export async function POST(request: Request) {
     }
 
     const verification =
-      await db.verificationCode.findFirst({
-        where: {
-          userId: user.id,
-          destination: normalizedIdentifier,
-          usedAt: null,
+  await db.verificationCode.findFirst({
+    where: {
+      userId: user.id,
+      channel: "EMAIL",
+      purpose: "SIGNUP",
+      destination: email,
+      usedAt: null,
+    },
 
-          expiresAt: {
-            gt: new Date(),
-          },
-        },
-
-        orderBy: {
-          createdAt: "desc",
-        },
-      });
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
 
     if (!verification) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Verification code is invalid or has expired",
+            "No active verification code was found",
         },
         {
           status: 400,
@@ -108,12 +96,30 @@ export async function POST(request: Request) {
       );
     }
 
-    if (verification.attempts >= 5) {
+    if (
+      verification.expiresAt.getTime() <
+      Date.now()
+    ) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Too many incorrect attempts. Request a new code.",
+            "Verification code has expired",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (
+      verification.attempts >= 5
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Too many verification attempts. Request a new code.",
         },
         {
           status: 429,
@@ -121,12 +127,34 @@ export async function POST(request: Request) {
       );
     }
 
-    const submittedHash = hashOtp(code);
+    const submittedHash =
+      hashOtp(code);
 
-    if (submittedHash !== verification.codeHash) {
+    const storedBuffer =
+      Buffer.from(
+        verification.codeHash,
+        "hex"
+      );
+
+    const submittedBuffer =
+      Buffer.from(
+        submittedHash,
+        "hex"
+      );
+
+    const codeMatches =
+      storedBuffer.length ===
+        submittedBuffer.length &&
+      timingSafeEqual(
+        storedBuffer,
+        submittedBuffer
+      );
+
+    if (!codeMatches) {
       await db.verificationCode.update({
         where: {
-          id: verification.id,
+          id:
+            verification.id,
         },
 
         data: {
@@ -139,7 +167,8 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          message: "Incorrect verification code",
+          message:
+            "Incorrect verification code",
         },
         {
           status: 400,
@@ -147,34 +176,31 @@ export async function POST(request: Request) {
       );
     }
 
-    const verifiedAt = new Date();
-
     await db.$transaction([
       db.verificationCode.update({
         where: {
-          id: verification.id,
+          id:
+            verification.id,
         },
 
         data: {
-          usedAt: verifiedAt,
+          usedAt:
+            new Date(),
         },
       }),
 
       db.user.update({
         where: {
-          id: user.id,
+          id:
+            user.id,
         },
 
         data: {
-          status: "ACTIVE",
+          status:
+            "ACTIVE",
 
-          ...(verification.channel === "EMAIL"
-            ? {
-                emailVerifiedAt: verifiedAt,
-              }
-            : {
-                phoneVerifiedAt: verifiedAt,
-              }),
+          emailVerifiedAt:
+            new Date(),
         },
       }),
     ]);
@@ -183,21 +209,19 @@ export async function POST(request: Request) {
       success: true,
 
       message:
-        "Account verified successfully",
-
-      user: {
-        id: user.id,
-        role: user.role,
-      },
+        "Email verified successfully",
     });
   } catch (error) {
-    console.error("Verify OTP error:", error);
+    console.error(
+      "Verify OTP error:",
+      error
+    );
 
     return NextResponse.json(
       {
         success: false,
         message:
-          "Something went wrong while verifying your account",
+          "Could not verify email",
       },
       {
         status: 500,

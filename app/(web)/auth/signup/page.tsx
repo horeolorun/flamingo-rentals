@@ -4,49 +4,84 @@ import {
   FormEvent,
   useState,
 } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 
-import { vendorSegments } from "@/app/data/vendorSegments";
+import Link from "next/link";
+import {
+  useRouter,
+} from "next/navigation";
+
+import {
+  vendorSegments,
+} from "@/app/data/vendorSegments";
 
 type AccountType =
   | "CUSTOMER"
   | "VENDOR";
 
-type ContactMethod =
-  | "EMAIL"
-  | "PHONE";
-
 export default function SignupPage() {
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  const [accountType, setAccountType] =
+  const [
+    accountType,
+    setAccountType,
+  ] =
     useState<AccountType>(
       "CUSTOMER"
     );
 
   const [
-    contactMethod,
-    setContactMethod,
-  ] = useState<ContactMethod>(
-    "EMAIL"
-  );
-
-  const [fullName, setFullName] =
+    fullName,
+    setFullName,
+  ] =
     useState("");
 
-  const [identifier, setIdentifier] =
+  const [
+    email,
+    setEmail,
+  ] =
+    useState("");
+
+  const [
+    phone,
+    setPhone,
+  ] =
+    useState("");
+
+  const [
+    password,
+    setPassword,
+  ] =
+    useState("");
+
+  const [
+    confirmPassword,
+    setConfirmPassword,
+  ] =
     useState("");
 
   const [
     selectedSegments,
     setSelectedSegments,
-  ] = useState<string[]>([]);
+  ] =
+    useState<string[]>([]);
 
-  const [error, setError] =
+  const [
+    marketingEmailsOptIn,
+    setMarketingEmailsOptIn,
+  ] =
+    useState(false);
+
+  const [
+    error,
+    setError,
+  ] =
     useState("");
 
-  const [isSubmitting, setIsSubmitting] =
+  const [
+    isSubmitting,
+    setIsSubmitting,
+  ] =
     useState(false);
 
   function toggleSegment(
@@ -54,10 +89,13 @@ export default function SignupPage() {
   ) {
     setSelectedSegments(
       (current) =>
-        current.includes(segment)
+        current.includes(
+          segment
+        )
           ? current.filter(
               (item) =>
-                item !== segment
+                item !==
+                segment
             )
           : [
               ...current,
@@ -73,35 +111,70 @@ export default function SignupPage() {
 
     setError("");
 
-    const cleanIdentifier =
-      identifier.trim();
+    const cleanName =
+      fullName.trim();
 
-    if (!fullName.trim()) {
+    const cleanEmail =
+      email
+        .trim()
+        .toLowerCase();
+
+    const cleanPhone =
+      phone.trim();
+
+    if (!cleanName) {
       setError(
         "Please enter your full name."
       );
-
       return;
     }
 
-    if (!cleanIdentifier) {
+    if (!cleanEmail) {
       setError(
-        contactMethod === "EMAIL"
-          ? "Please enter your email address."
-          : "Please enter your phone number."
+        "Please enter your email address."
       );
-
       return;
     }
 
     if (
-      accountType === "VENDOR" &&
-      selectedSegments.length === 0
+      accountType ===
+        "VENDOR" &&
+      !cleanPhone
+    ) {
+      setError(
+        "Please enter your phone number."
+      );
+      return;
+    }
+
+    if (
+      password.length < 8
+    ) {
+      setError(
+        "Password must be at least 8 characters."
+      );
+      return;
+    }
+
+    if (
+      password !==
+      confirmPassword
+    ) {
+      setError(
+        "Passwords do not match."
+      );
+      return;
+    }
+
+    if (
+      accountType ===
+        "VENDOR" &&
+      selectedSegments.length ===
+        0
     ) {
       setError(
         "Please select at least one business segment."
       );
-
       return;
     }
 
@@ -112,44 +185,50 @@ export default function SignupPage() {
         await fetch(
           "/api/auth/register",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
                 "application/json",
             },
 
-            body: JSON.stringify({
-              fullName:
-                fullName.trim(),
+            body:
+              JSON.stringify({
+                fullName:
+                  cleanName,
 
-              role: accountType,
+                email:
+                  cleanEmail,
 
-              email:
-                contactMethod ===
-                "EMAIL"
-                  ? cleanIdentifier
-                  : null,
+                phone:
+                  accountType ===
+                  "VENDOR"
+                    ? cleanPhone
+                    : null,
 
-              phone:
-                contactMethod ===
-                "PHONE"
-                  ? cleanIdentifier
-                  : null,
+                password,
 
-              segments:
-                accountType ===
-                "VENDOR"
-                  ? selectedSegments
-                  : [],
-            }),
+                role:
+                  accountType,
+
+                segments:
+                  accountType ===
+                  "VENDOR"
+                    ? selectedSegments
+                    : [],
+
+                marketingEmailsOptIn,
+              }),
           }
         );
 
       const registerData =
         await registerResponse.json();
 
-      if (!registerResponse.ok) {
+      if (
+        !registerResponse.ok
+      ) {
         setError(
           registerData.message ||
             "Could not create account."
@@ -162,43 +241,45 @@ export default function SignupPage() {
         await fetch(
           "/api/auth/send-otp",
           {
-            method: "POST",
+            method:
+              "POST",
 
             headers: {
               "Content-Type":
                 "application/json",
             },
 
-            body: JSON.stringify({
-              identifier:
-                cleanIdentifier,
-            }),
+            body:
+              JSON.stringify({
+                email:
+                  cleanEmail,
+              }),
           }
         );
 
       const otpData =
-  await otpResponse.json();
+        await otpResponse.json();
 
-if (!otpResponse.ok) {
-  setError(
-    otpData.message ||
-      "Account created, but we could not send the verification code."
-  );
+      if (!otpResponse.ok) {
+        setError(
+          otpData.message ||
+            "Account created, but the verification code could not be sent."
+        );
 
-  return;
-}
+        return;
+      }
 
-if (otpData.devOtp) {
-  alert(
-    `Development OTP: ${otpData.devOtp}`
-  );
-}
+      if (otpData.devOtp) {
+        alert(
+          `Development OTP: ${otpData.devOtp}`
+        );
+      }
 
-router.push(
-  `/auth/verify?identifier=${encodeURIComponent(
-    cleanIdentifier
-  )}`
-);
+      router.push(
+        `/auth/verify?email=${encodeURIComponent(
+          cleanEmail
+        )}`
+      );
     } catch (error) {
       console.error(
         "Signup error:",
@@ -214,7 +295,7 @@ router.push(
   }
 
   return (
-    <main className="min-h-[calc(100vh-72px)] bg-[#faf9fc] px-6 py-12">
+    <main className="min-h-[calc(100vh-76px)] bg-[#faf9fc] px-6 py-12">
       <div className="mx-auto max-w-2xl">
 
         <div className="text-center">
@@ -227,24 +308,25 @@ router.push(
           </h1>
 
           <p className="mt-3 text-gray-500">
-            Find everything for your event
-            or grow your event business.
+            Plan your event or grow your event business.
           </p>
         </div>
 
         <form
-          onSubmit={handleSubmit}
+          onSubmit={
+            handleSubmit
+          }
           className="mt-10 rounded-3xl border border-gray-100 bg-white p-8 shadow-sm"
         >
 
           {/* ACCOUNT TYPE */}
-
           <div>
             <p className="text-sm font-semibold text-gray-700">
               I want to use Flamingo as
             </p>
 
             <div className="mt-3 grid grid-cols-2 gap-3">
+
               <button
                 type="button"
                 onClick={() =>
@@ -256,7 +338,7 @@ router.push(
                   accountType ===
                   "CUSTOMER"
                     ? "border-[#4f2a91] bg-[#f5f0fc] text-[#4f2a91]"
-                    : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    : "border-gray-200 text-gray-600"
                 }`}
               >
                 Customer
@@ -273,7 +355,7 @@ router.push(
                   accountType ===
                   "VENDOR"
                     ? "border-[#4f2a91] bg-[#f5f0fc] text-[#4f2a91]"
-                    : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    : "border-gray-200 text-gray-600"
                 }`}
               >
                 Vendor
@@ -281,8 +363,7 @@ router.push(
             </div>
           </div>
 
-          {/* NAME */}
-
+          {/* FULL NAME */}
           <div className="mt-6">
             <label
               htmlFor="fullName"
@@ -295,99 +376,145 @@ router.push(
               id="fullName"
               type="text"
               value={fullName}
-              onChange={(event) =>
+              onChange={(
+                event
+              ) =>
                 setFullName(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
               placeholder="Enter your full name"
-              className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 outline-none transition focus:border-[#4f2a91]"
+              className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-[#4f2a91]"
             />
           </div>
 
-          {/* CONTACT METHOD */}
-
+          {/* EMAIL */}
           <div className="mt-6">
-            <p className="text-sm font-semibold text-gray-700">
-              Verify using
-            </p>
-
-            <div className="mt-3 flex gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setContactMethod(
-                    "EMAIL"
-                  );
-
-                  setIdentifier("");
-                }}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                  contactMethod ===
-                  "EMAIL"
-                    ? "bg-[#4f2a91] text-white"
-                    : "bg-gray-100 text-gray-600"
-                }`}
-              >
-                Email
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setContactMethod(
-                    "PHONE"
-                  );
-
-                  setIdentifier("");
-                }}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                  contactMethod ===
-                  "PHONE"
-                    ? "bg-[#4f2a91] text-white"
-                    : "bg-gray-100 text-gray-600"
-                }`}
-              >
-                Phone
-              </button>
-            </div>
+            <label
+              htmlFor="email"
+              className="block text-sm font-semibold text-gray-700"
+            >
+              Email
+            </label>
 
             <input
-              type={
-                contactMethod ===
-                "EMAIL"
-                  ? "email"
-                  : "tel"
-              }
-              value={identifier}
-              onChange={(event) =>
-                setIdentifier(
-                  event.target.value
+              id="email"
+              type="email"
+              value={email}
+              onChange={(
+                event
+              ) =>
+                setEmail(
+                  event.target
+                    .value
                 )
               }
-              placeholder={
-                contactMethod ===
-                "EMAIL"
-                  ? "you@example.com"
-                  : "+234..."
-              }
-              className="mt-3 w-full rounded-xl border border-gray-200 px-4 py-3 outline-none transition focus:border-[#4f2a91]"
+              placeholder="you@example.com"
+              className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-[#4f2a91]"
             />
+          </div>
+
+          {/* VENDOR PHONE */}
+          {accountType ===
+            "VENDOR" && (
+            <div className="mt-6">
+              <label
+                htmlFor="phone"
+                className="block text-sm font-semibold text-gray-700"
+              >
+                Phone number
+              </label>
+
+              <input
+                id="phone"
+                type="tel"
+                value={phone}
+                onChange={(
+                  event
+                ) =>
+                  setPhone(
+                    event.target
+                      .value
+                  )
+                }
+                placeholder="+234..."
+                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-[#4f2a91]"
+              />
+
+              <p className="mt-2 text-xs text-gray-500">
+                Required for vendor accounts.
+              </p>
+            </div>
+          )}
+
+          {/* PASSWORD */}
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <div>
+              <label
+                htmlFor="password"
+                className="block text-sm font-semibold text-gray-700"
+              >
+                Password
+              </label>
+
+              <input
+                id="password"
+                type="password"
+                value={
+                  password
+                }
+                onChange={(
+                  event
+                ) =>
+                  setPassword(
+                    event.target
+                      .value
+                  )
+                }
+                placeholder="At least 8 characters"
+                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-[#4f2a91]"
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="confirmPassword"
+                className="block text-sm font-semibold text-gray-700"
+              >
+                Confirm password
+              </label>
+
+              <input
+                id="confirmPassword"
+                type="password"
+                value={
+                  confirmPassword
+                }
+                onChange={(
+                  event
+                ) =>
+                  setConfirmPassword(
+                    event.target
+                      .value
+                  )
+                }
+                placeholder="Repeat password"
+                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-[#4f2a91]"
+              />
+            </div>
           </div>
 
           {/* VENDOR SEGMENTS */}
-
           {accountType ===
             "VENDOR" && (
             <div className="mt-8 border-t border-gray-100 pt-7">
               <h2 className="text-lg font-bold text-gray-900">
-                What does your business
-                provide?
+                What does your business provide?
               </h2>
 
               <p className="mt-1 text-sm text-gray-500">
                 Select all that apply.
-                You can update these later.
               </p>
 
               <div className="mt-5 flex flex-wrap gap-3">
@@ -412,7 +539,7 @@ router.push(
                         className={`rounded-full border px-4 py-2.5 text-sm font-semibold transition ${
                           selected
                             ? "border-[#4f2a91] bg-[#4f2a91] text-white"
-                            : "border-gray-200 bg-white text-gray-600 hover:border-[#4f2a91]/40"
+                            : "border-gray-200 bg-white text-gray-600"
                         }`}
                       >
                         {selected &&
@@ -426,7 +553,29 @@ router.push(
             </div>
           )}
 
-          {/* ERROR */}
+          {/* MARKETING EMAIL */}
+          <label className="mt-8 flex cursor-pointer items-start gap-3 rounded-2xl bg-[#faf9fc] p-4">
+            <input
+              type="checkbox"
+              checked={
+                marketingEmailsOptIn
+              }
+              onChange={(
+                event
+              ) =>
+                setMarketingEmailsOptIn(
+                  event.target
+                    .checked
+                )
+              }
+              className="mt-1 h-4 w-4 accent-[#4f2a91]"
+            />
+
+            <span className="text-sm leading-6 text-gray-600">
+              I&apos;d like to receive Flamingo updates,
+              offers and event inspiration by email.
+            </span>
+          </label>
 
           {error && (
             <div className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
@@ -434,16 +583,16 @@ router.push(
             </div>
           )}
 
-          {/* SUBMIT */}
-
           <button
             type="submit"
-            disabled={isSubmitting}
-            className="mt-8 w-full rounded-xl bg-[#4f2a91] px-6 py-3.5 font-semibold text-white shadow-sm transition hover:bg-[#3e2174] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={
+              isSubmitting
+            }
+            className="mt-8 w-full rounded-xl bg-[#4f2a91] px-6 py-3.5 font-semibold text-white transition hover:bg-[#3e2174] disabled:opacity-50"
           >
             {isSubmitting
               ? "Creating account..."
-              : "Continue"}
+              : "Create account"}
           </button>
 
           <p className="mt-6 text-center text-sm text-gray-500">

@@ -1,37 +1,110 @@
+import { hash } from "bcryptjs";
 import { NextResponse } from "next/server";
 
-import { db } from "@/app/lib/db";
 import { vendorSegments } from "@/app/data/vendorSegments";
+import { db } from "@/app/lib/db";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body: unknown =
+      await request.json();
 
-    const fullName = String(
-      body.fullName ?? ""
-    ).trim();
+    if (
+      !body ||
+      typeof body !== "object"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Invalid request body",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const requestBody =
+      body as Record<
+        string,
+        unknown
+      >;
+
+    const fullName =
+      String(
+        requestBody.fullName ??
+          ""
+      ).trim();
+
+    const email =
+      String(
+        requestBody.email ??
+          ""
+      )
+        .trim()
+        .toLowerCase();
+
+    const password =
+      String(
+        requestBody.password ??
+          ""
+      );
+
+    const requestedRole =
+      String(
+        requestBody.role ??
+          ""
+      ).toUpperCase();
+
+    if (
+      requestedRole !==
+        "CUSTOMER" &&
+      requestedRole !==
+        "VENDOR"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Please choose Customer or Vendor.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
 
     const role =
-      body.role === "VENDOR"
-        ? "VENDOR"
-        : "CUSTOMER";
+      requestedRole as
+        | "CUSTOMER"
+        | "VENDOR";
 
-    const email = body.email
-      ? String(body.email)
-          .trim()
-          .toLowerCase()
-      : null;
+    const phone =
+      role === "VENDOR"
+        ? String(
+            requestBody.phone ??
+              ""
+          ).trim()
+        : null;
 
-    const phone = body.phone
-      ? String(body.phone).trim()
-      : null;
+    const marketingEmailsOptIn =
+      requestBody.marketingEmailsOptIn ===
+      true;
 
-    const submittedSegments =
-      Array.isArray(body.segments)
-        ? body.segments.map((segment: unknown) =>
-            String(segment)
+    const submittedSegments: string[] =
+      Array.isArray(
+        requestBody.segments
+      )
+        ? requestBody.segments.map(
+            (
+              segment: unknown
+            ): string =>
+              String(
+                segment
+              ).trim()
           )
         : [];
 
@@ -39,7 +112,8 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          message: "Full name is required",
+          message:
+            "Full name is required",
         },
         {
           status: 400,
@@ -47,12 +121,12 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!email && !phone) {
+    if (!email) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Email or phone number is required",
+            "Email address is required",
         },
         {
           status: 400,
@@ -60,12 +134,19 @@ export async function POST(request: Request) {
       );
     }
 
-    if (email && phone) {
+    const emailPattern =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (
+      !emailPattern.test(
+        email
+      )
+    ) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "Please use either email or phone number",
+            "Please enter a valid email address",
         },
         {
           status: 400,
@@ -73,17 +154,59 @@ export async function POST(request: Request) {
       );
     }
 
-    const validSegments =
-      submittedSegments.filter((segment) =>
-        vendorSegments.includes(
-          segment as
-            (typeof vendorSegments)[number]
+    if (
+      password.length < 8
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Password must be at least 8 characters",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (
+      role === "VENDOR" &&
+      !phone
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Phone number is required for vendor accounts",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const validSegments: string[] =
+      submittedSegments.filter(
+        (
+          segment: string
+        ): boolean =>
+          vendorSegments.includes(
+            segment as
+              (typeof vendorSegments)[number]
+          )
+      );
+
+    const uniqueSegments: string[] =
+      Array.from(
+        new Set<string>(
+          validSegments
         )
       );
 
     if (
       role === "VENDOR" &&
-      validSegments.length === 0
+      uniqueSegments.length ===
+        0
     ) {
       return NextResponse.json(
         {
@@ -97,27 +220,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const existingUser =
-      await db.user.findFirst({
+    const existingEmail =
+      await db.user.findUnique({
         where: {
-          OR: [
-            ...(email
-              ? [{ email }]
-              : []),
-
-            ...(phone
-              ? [{ phone }]
-              : []),
-          ],
+          email,
         },
       });
 
-    if (existingUser) {
+    if (existingEmail) {
       return NextResponse.json(
         {
           success: false,
           message:
-            "An account already exists with these details",
+            "An account already exists with this email address",
         },
         {
           status: 409,
@@ -125,48 +240,98 @@ export async function POST(request: Request) {
       );
     }
 
-    const user = await db.user.create({
-      data: {
-        fullName,
-        email,
-        phone,
-        role,
+    if (phone) {
+      const existingPhone =
+        await db.user.findUnique({
+          where: {
+            phone,
+          },
+        });
 
-        ...(role === "VENDOR"
-          ? {
-              vendorProfile: {
-                create: {
-                  segments:
-                    validSegments,
+      if (existingPhone) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "An account already exists with this phone number",
+          },
+          {
+            status: 409,
+          }
+        );
+      }
+    }
+
+    const passwordHash =
+      await hash(
+        password,
+        12
+      );
+
+    const user =
+      await db.user.create({
+        data: {
+          fullName,
+          email,
+          phone,
+          passwordHash,
+
+          role,
+
+          status:
+            "PENDING_VERIFICATION",
+
+          marketingEmailsOptIn,
+
+          marketingEmailsOptInAt:
+            marketingEmailsOptIn
+              ? new Date()
+              : null,
+
+          ...(role ===
+          "VENDOR"
+            ? {
+                vendorProfile: {
+                  create: {
+                    segments:
+                      uniqueSegments,
+                  },
                 },
-              },
-            }
-          : {}),
-      },
+              }
+            : {}),
+        },
 
-      include: {
-        vendorProfile: true,
-      },
-    });
+        include: {
+          vendorProfile: true,
+        },
+      });
 
     return NextResponse.json(
       {
         success: true,
 
         message:
-          "Account created successfully",
+          "Account created. Please verify your email.",
 
         user: {
           id: user.id,
+
           fullName:
             user.fullName,
-          email: user.email,
-          phone: user.phone,
-          role: user.role,
+
+          email:
+            user.email,
+
+          phone:
+            user.phone,
+
+          role:
+            user.role,
 
           segments:
             user.vendorProfile
-              ?.segments ?? [],
+              ?.segments ??
+            [],
         },
       },
       {

@@ -1,92 +1,143 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
-  CheckCircle2,
-  RefreshCw,
-  ShieldCheck,
-} from "lucide-react";
+  FormEvent,
+  useEffect,
+  useState,
+} from "react";
+
+import {
+  useRouter,
+} from "next/navigation";
 
 export default function VerifyPage() {
-  const router = useRouter();
+  const router =
+    useRouter();
 
-  const [identifier, setIdentifier] = useState("");
-  const [code, setCode] = useState("");
-  const [devOtp, setDevOtp] = useState("");
+  const [
+    email,
+    setEmail,
+  ] =
+    useState("");
 
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [
+    emailLoaded,
+    setEmailLoaded,
+  ] =
+    useState(false);
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isResending, setIsResending] = useState(false);
+  const [
+    code,
+    setCode,
+  ] =
+    useState("");
+
+  const [
+    error,
+    setError,
+  ] =
+    useState("");
+
+  const [
+    message,
+    setMessage,
+  ] =
+    useState("");
+
+  const [
+    isSubmitting,
+    setIsSubmitting,
+  ] =
+    useState(false);
+
+  const [
+    isResending,
+    setIsResending,
+  ] =
+    useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(
-      window.location.search
+    const params =
+      new URLSearchParams(
+        window.location.search
+      );
+
+    const emailParam =
+      params.get("email") ?? "";
+
+    setEmail(
+      emailParam
+        .trim()
+        .toLowerCase()
     );
 
-    const identifierFromUrl =
-      params.get("identifier");
-
-    if (identifierFromUrl) {
-      setIdentifier(identifierFromUrl);
-    }
-
-    const storedOtp =
-      sessionStorage.getItem("flamingoDevOtp");
-
-    if (storedOtp) {
-      setDevOtp(storedOtp);
-    }
+    setEmailLoaded(true);
   }, []);
 
-  async function verifyOtp(
+  async function handleSubmit(
     event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
 
     setError("");
     setMessage("");
+
+    if (!email) {
+      setError(
+        "Your email address is missing. Please restart the signup process."
+      );
+
+      return;
+    }
+
+    if (!code.trim()) {
+      setError(
+        "Enter the verification code."
+      );
+
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(
-        "/api/auth/verify-otp",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            identifier,
-            code,
-          }),
-        }
-      );
+      const response =
+        await fetch(
+          "/api/auth/verify-otp",
+          {
+            method:
+              "POST",
 
-      const data = await response.json();
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                email,
+
+                code:
+                  code.trim(),
+              }),
+          }
+        );
+
+      const data =
+        await response.json();
 
       if (!response.ok) {
         setError(
-          data.message || "Verification failed"
+          data.message ||
+            "Could not verify your email."
         );
+
         return;
       }
 
-      sessionStorage.removeItem(
-        "flamingoDevOtp"
+      router.replace(
+        "/auth/login?verified=1"
       );
-
-      setDevOtp("");
-
-      setMessage(
-        "Your account has been verified successfully."
-      );
-
-      setTimeout(() => {
-       router.push("/auth/login");
-      }, 1500);
     } catch (error) {
       console.error(
         "Verification error:",
@@ -94,49 +145,65 @@ export default function VerifyPage() {
       );
 
       setError(
-        "Something went wrong. Please try again."
+        "Something went wrong while verifying your email."
       );
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(
+        false
+      );
     }
   }
 
-  async function resendOtp() {
+  async function resendCode() {
     setError("");
     setMessage("");
+
+    if (!email) {
+      setError(
+        "Your email address is missing. Please restart the signup process."
+      );
+
+      return;
+    }
+
     setIsResending(true);
 
     try {
-      const response = await fetch(
-        "/api/auth/send-otp",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            identifier,
-          }),
-        }
-      );
+      const response =
+        await fetch(
+          "/api/auth/send-otp",
+          {
+            method:
+              "POST",
 
-      const data = await response.json();
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                email,
+              }),
+          }
+        );
+
+      const data =
+        await response.json();
 
       if (!response.ok) {
         setError(
           data.message ||
-            "Unable to send another code"
+            "Could not resend code."
         );
+
         return;
       }
 
       if (data.devOtp) {
-        sessionStorage.setItem(
-          "flamingoDevOtp",
-          data.devOtp
+        alert(
+          `Development OTP: ${data.devOtp}`
         );
-
-        setDevOtp(data.devOtp);
       }
 
       setMessage(
@@ -144,139 +211,128 @@ export default function VerifyPage() {
       );
     } catch (error) {
       console.error(
-        "Resend OTP error:",
+        "Resend error:",
         error
       );
 
       setError(
-        "Something went wrong. Please try again."
+        "Could not resend verification code."
       );
     } finally {
-      setIsResending(false);
+      setIsResending(
+        false
+      );
     }
   }
 
   return (
-    <main className="min-h-[calc(100vh-73px)] bg-[#faf9fc]">
-      <div className="mx-auto flex max-w-7xl justify-center px-6 py-20">
+    <main className="min-h-[calc(100vh-76px)] bg-[#faf9fc] px-6 py-16">
+      <div className="mx-auto max-w-md">
 
-        <section className="w-full max-w-md rounded-3xl border border-gray-100 bg-white p-8 shadow-xl shadow-purple-900/5">
+        <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-sm">
 
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-purple-50 text-[#4f2a91]">
-            <ShieldCheck size={24} />
-          </div>
-
-          <h1 className="mt-5 text-3xl font-bold text-gray-900">
-            Verify your account
-          </h1>
-
-          <p className="mt-2 text-sm leading-6 text-gray-500">
-            Enter the six-digit verification code.
+          <p className="text-sm font-semibold uppercase tracking-wide text-[#4f2a91]">
+            Email verification
           </p>
 
+          <h1 className="mt-3 text-3xl font-bold text-gray-900">
+            Check your email
+          </h1>
+
+          {!emailLoaded ? (
+            <p className="mt-3 text-sm leading-6 text-gray-500">
+              Loading your verification request...
+            </p>
+          ) : email ? (
+            <p className="mt-3 text-sm leading-6 text-gray-500">
+              Enter the six-digit verification code sent to{" "}
+
+              <span className="font-semibold text-gray-700">
+                {email}
+              </span>
+              .
+            </p>
+          ) : (
+            <p className="mt-3 text-sm leading-6 text-red-600">
+              Your email address is missing. Please restart the signup process.
+            </p>
+          )}
+
           <form
-            onSubmit={verifyOtp}
-            className="mt-7 space-y-5"
+            onSubmit={
+              handleSubmit
+            }
+            className="mt-8"
           >
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Email or phone number
-              </label>
+            <label
+              htmlFor="code"
+              className="block text-sm font-semibold text-gray-700"
+            >
+              Verification code
+            </label>
 
-              <input
-                type="text"
-                value={identifier}
-                onChange={(event) =>
-                  setIdentifier(event.target.value)
-                }
-                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-[#4f2a91] focus:ring-4 focus:ring-purple-100"
-              />
-            </div>
+            <input
+              id="code"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              onChange={(
+                event
+              ) =>
+                setCode(
+                  event.target
+                    .value
+                )
+              }
+              placeholder="123456"
+              className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-center text-2xl font-semibold tracking-[0.35em] outline-none focus:border-[#4f2a91]"
+            />
 
-            <div>
-              <label className="text-sm font-medium text-gray-700">
-                Verification code
-              </label>
+            {error && (
+              <div className="mt-5 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                {error}
+              </div>
+            )}
 
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                value={code}
-                onChange={(event) =>
-                  setCode(
-                    event.target.value.replace(
-                      /\D/g,
-                      ""
-                    )
-                  )
-                }
-                placeholder="000000"
-                className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-center text-2xl font-semibold tracking-[0.5em] outline-none focus:border-[#4f2a91] focus:ring-4 focus:ring-purple-100"
-              />
-            </div>
+            {message && (
+              <div className="mt-5 rounded-xl bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
+                {message}
+              </div>
+            )}
 
             <button
               type="submit"
               disabled={
                 isSubmitting ||
-                code.length !== 6
+                !emailLoaded ||
+                !email
               }
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#4f2a91] px-5 py-3.5 font-medium text-white transition hover:bg-[#3e2174] disabled:cursor-not-allowed disabled:opacity-50"
+              className="mt-6 w-full rounded-xl bg-[#4f2a91] px-6 py-3.5 font-semibold text-white transition hover:bg-[#3e2174] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSubmitting
                 ? "Verifying..."
-                : "Verify account"}
-
-              {!isSubmitting && (
-                <CheckCircle2 size={18} />
-              )}
+                : "Verify email"}
             </button>
           </form>
 
-          {devOtp && (
-            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-                Development only
-              </p>
-
-              <p className="mt-1 text-sm text-amber-800">
-                Test OTP:{" "}
-                <strong>{devOtp}</strong>
-              </p>
-            </div>
-          )}
-
-          {error && (
-            <div className="mt-5 rounded-xl bg-red-50 p-4 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          {message && (
-            <div className="mt-5 rounded-xl bg-green-50 p-4 text-sm text-green-700">
-              {message}
-            </div>
-          )}
-
           <button
             type="button"
-            onClick={resendOtp}
+            onClick={
+              resendCode
+            }
             disabled={
               isResending ||
-              !identifier
+              !emailLoaded ||
+              !email
             }
-            className="mt-6 flex w-full items-center justify-center gap-2 text-sm font-semibold text-[#4f2a91] disabled:opacity-40"
+            className="mt-5 w-full text-sm font-semibold text-[#4f2a91] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw size={16} />
-
             {isResending
-              ? "Generating new code..."
-              : "Send another code"}
+              ? "Sending..."
+              : "Resend code"}
           </button>
-
-        </section>
-
+        </div>
       </div>
     </main>
   );

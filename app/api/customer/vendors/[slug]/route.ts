@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { vendors } from "@/app/data/vendor";
+import { db } from "@/app/lib/db";
+
+export const runtime = "nodejs";
 
 type RouteContext = {
   params: Promise<{
@@ -12,24 +14,119 @@ export async function GET(
   request: Request,
   { params }: RouteContext
 ) {
-  const { slug } = await params;
+  try {
+    const { slug } = await params;
 
-  const vendor = vendors.find(
-    (vendor) => vendor.slug === slug
-  );
+    const profile =
+      await db.vendorProfile.findUnique({
+        where: {
+          id: slug,
+        },
 
-  if (!vendor) {
+        include: {
+          user: true,
+
+          listings: {
+            where: {
+              isAvailable: true,
+            },
+
+            orderBy: {
+              createdAt: "desc",
+            },
+          },
+        },
+      });
+
+    if (
+      !profile ||
+      profile.user.role !== "VENDOR" ||
+      profile.user.status !== "ACTIVE"
+    ) {
+      return NextResponse.json(
+        {
+          message:
+            "Vendor not found",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    return NextResponse.json({
+      data: {
+        id: profile.id,
+
+        slug: profile.id,
+
+        businessName:
+          profile.businessName?.trim() ||
+          `${profile.user.fullName}'s Business`,
+
+        segments:
+          profile.segments,
+
+        verified:
+          profile.kycStatus ===
+          "VERIFIED",
+
+        kycStatus:
+          profile.kycStatus,
+
+        listingCount:
+          profile.listings.length,
+
+        imageUrl:
+          "/home/hero-venue.jpg",
+
+        listings:
+          profile.listings.map(
+            (listing) => ({
+              id:
+                listing.id,
+
+              title:
+                listing.title,
+
+              slug:
+                listing.slug,
+
+              description:
+                listing.description,
+
+              category:
+                listing.category,
+
+              priceKobo:
+                listing.priceKobo,
+
+              pricingUnit:
+                listing.pricingUnit,
+
+              status:
+                listing.status,
+
+              isAvailable:
+                listing.isAvailable,
+            })
+          ),
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Customer vendor detail API error:",
+      error
+    );
+
     return NextResponse.json(
       {
-        message: "Vendor not found",
+        message:
+          "Could not load vendor.",
       },
       {
-        status: 404,
+        status: 500,
       }
     );
   }
-
-  return NextResponse.json({
-    data: vendor,
-  });
 }

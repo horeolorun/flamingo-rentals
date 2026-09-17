@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { vendors } from "@/app/data/vendor";
+import { db } from "@/app/lib/db";
 
 type VendorPageProps = {
   params: Promise<{
@@ -10,167 +10,209 @@ type VendorPageProps = {
   }>;
 };
 
+function formatNaira(
+  priceKobo: number
+) {
+  return new Intl.NumberFormat(
+    "en-NG",
+    {
+      style: "currency",
+      currency: "NGN",
+      maximumFractionDigits: 0,
+    }
+  ).format(
+    priceKobo / 100
+  );
+}
+
 export default async function VendorPage({
   params,
 }: VendorPageProps) {
-  const { slug } = await params;
+  const { slug } =
+    await params;
 
-  const vendor = vendors.find(
-    (vendor) => vendor.slug === slug
-  );
+  const vendor =
+    await db.vendorProfile.findUnique({
+      where: {
+        id: slug,
+      },
 
-  if (!vendor) {
+      include: {
+        user: true,
+
+        listings: {
+          where: {
+            isAvailable: true,
+          },
+
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+      },
+    });
+
+  if (
+    !vendor ||
+    vendor.user.role !==
+      "VENDOR" ||
+    vendor.user.status !==
+      "ACTIVE"
+  ) {
     notFound();
   }
 
+  const businessName =
+    vendor.businessName?.trim() ||
+    `${vendor.user.fullName}'s Business`;
+
   return (
     <main className="min-h-screen bg-[#faf9fc]">
-      {/* HERO IMAGE */}
-      <section className="relative h-[360px] w-full overflow-hidden">
-        <Image
-          src={vendor.imageUrl}
-          alt={vendor.businessName}
-          fill
-          priority
-          className="object-cover"
-        />
 
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+      {/* VENDOR HERO */}
+      <section className="border-b border-gray-100 bg-white">
+        <div className="mx-auto grid max-w-7xl gap-10 px-6 py-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
 
-        <div className="absolute bottom-0 left-0 right-0">
-          <div className="mx-auto max-w-7xl px-6 pb-10">
+          <div className="relative h-[320px] overflow-hidden rounded-3xl">
+            <Image
+              src="/home/hero-venue.jpg"
+              alt={businessName}
+              fill
+              priority
+              sizes="(max-width: 1024px) 100vw, 40vw"
+              className="object-cover"
+            />
+          </div>
+
+          <div>
             <Link
-              href="/"
-              className="mb-5 inline-block text-sm font-medium text-white/90 hover:text-white"
+              href="/#vendors"
+              className="text-sm font-semibold text-[#4f2a91]"
             >
-              ← Back to marketplace
+              ← Back to vendors
             </Link>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-full bg-white/90 px-3 py-1 text-sm font-medium text-[#4f2a91]">
-                {vendor.category}
-              </span>
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              {vendor.segments.map(
+                (segment) => (
+                  <span
+                    key={
+                      segment
+                    }
+                    className="rounded-full bg-[#f3edfb] px-3 py-1.5 text-xs font-semibold text-[#4f2a91]"
+                  >
+                    {segment}
+                  </span>
+                )
+              )}
 
-              {vendor.verified && (
-                <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-medium text-green-700">
-                  Verified vendor
+              {vendor.kycStatus ===
+                "VERIFIED" && (
+                <span className="rounded-full bg-green-50 px-3 py-1.5 text-xs font-semibold text-green-700">
+                  ✓ Verified
                 </span>
               )}
             </div>
 
-            <h1 className="mt-4 text-4xl font-bold text-white md:text-5xl">
-              {vendor.businessName}
+            <h1 className="mt-5 text-4xl font-bold tracking-tight text-gray-900 md:text-5xl">
+              {businessName}
             </h1>
 
-            <p className="mt-3 text-white/90">
-              {vendor.city}, {vendor.region}
+            <p className="mt-4 max-w-2xl leading-7 text-gray-500">
+              Explore available products and services from this
+              Flamingo vendor.
             </p>
+
+            <div className="mt-6 inline-flex rounded-xl bg-[#faf7ff] px-4 py-3 text-sm font-semibold text-[#4f2a91]">
+              {vendor.listings.length ===
+              1
+                ? "1 available listing"
+                : `${vendor.listings.length} available listings`}
+            </div>
           </div>
         </div>
       </section>
 
-      {/* CONTENT */}
-      <section className="mx-auto grid max-w-7xl gap-8 px-6 py-12 lg:grid-cols-[1fr_340px]">
+      {/* LISTINGS */}
+      <section className="mx-auto max-w-7xl px-6 py-16">
 
-        {/* MAIN DETAILS */}
         <div>
-          <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-sm">
-            <p className="text-sm font-semibold uppercase tracking-wide text-[#4f2a91]">
-              About this vendor
-            </p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-[#4f2a91]">
+            Services & products
+          </p>
 
-            <h2 className="mt-3 text-2xl font-bold text-gray-900">
-              {vendor.businessName}
-            </h2>
-
-            <p className="mt-4 leading-7 text-gray-600">
-              Explore services from {vendor.businessName}.
-              This vendor provides {vendor.category.toLowerCase()} services
-              for events in {vendor.city}.
-            </p>
-
-            <div className="mt-8 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl bg-[#faf9fc] p-5">
-                <p className="text-sm text-gray-500">
-                  Rating
-                </p>
-
-                <p className="mt-2 text-xl font-bold text-gray-900">
-                  ★ {vendor.rating}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-[#faf9fc] p-5">
-                <p className="text-sm text-gray-500">
-                  Customers
-                </p>
-
-                <p className="mt-2 text-xl font-bold text-gray-900">
-                  {vendor.customerCount}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-[#faf9fc] p-5">
-                <p className="text-sm text-gray-500">
-                  Category
-                </p>
-
-                <p className="mt-2 text-xl font-bold text-gray-900">
-                  {vendor.category}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 rounded-3xl border border-gray-100 bg-white p-8 shadow-sm">
-            <h2 className="text-2xl font-bold text-gray-900">
-              Services & packages
-            </h2>
-
-            <p className="mt-3 text-gray-500">
-              Vendor listings and packages will appear here once we connect
-              the marketplace listings database.
-            </p>
-          </div>
+          <h2 className="mt-2 text-3xl font-bold text-gray-900">
+            Available listings
+          </h2>
         </div>
 
-        {/* SIDEBAR */}
-        <aside>
-          <div className="sticky top-24 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-            <p className="text-sm text-gray-500">
-              Interested in this vendor?
-            </p>
+        {vendor.listings.length >
+        0 ? (
+          <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {vendor.listings.map(
+              (listing) => (
+                <article
+                  key={
+                    listing.id
+                  }
+                  className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm"
+                >
+                  <span className="rounded-full bg-[#f3edfb] px-3 py-1.5 text-xs font-semibold text-[#4f2a91]">
+                    {
+                      listing.category
+                    }
+                  </span>
 
-            <h3 className="mt-2 text-xl font-bold text-gray-900">
-              Start planning your event
+                  <h3 className="mt-5 text-xl font-bold text-gray-900">
+                    {listing.title}
+                  </h3>
+
+                  {listing.description && (
+                    <p className="mt-3 line-clamp-3 text-sm leading-6 text-gray-500">
+                      {
+                        listing.description
+                      }
+                    </p>
+                  )}
+
+                  <div className="mt-6 border-t border-gray-100 pt-5">
+                    <p className="text-2xl font-bold text-gray-900">
+                      {formatNaira(
+                        listing.priceKobo
+                      )}
+                    </p>
+
+                    {listing.pricingUnit && (
+                      <p className="mt-1 text-sm text-gray-500">
+                        per{" "}
+                        {
+                          listing.pricingUnit
+                        }
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="mt-6 w-full rounded-xl bg-[#4f2a91] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#3e2174]"
+                  >
+                    Add to booking cart
+                  </button>
+                </article>
+              )
+            )}
+          </div>
+        ) : (
+          <div className="mt-10 rounded-3xl border border-dashed border-gray-200 bg-white px-8 py-12 text-center">
+            <h3 className="font-bold text-gray-900">
+              No listings available yet
             </h3>
 
-            <button
-              type="button"
-              className="mt-6 w-full rounded-xl bg-[#4f2a91] px-5 py-3.5 font-semibold text-white transition hover:bg-[#3e2174]"
-            >
-              View services
-            </button>
-
-            <button
-              type="button"
-              className="mt-3 w-full rounded-xl border border-gray-200 px-5 py-3.5 font-semibold text-gray-700 transition hover:bg-gray-50"
-            >
-              Contact vendor
-            </button>
-
-            <div className="mt-6 border-t border-gray-100 pt-5">
-              <p className="text-sm text-gray-500">
-                Location
-              </p>
-
-              <p className="mt-1 font-medium text-gray-900">
-                {vendor.city}, {vendor.region}
-              </p>
-            </div>
+            <p className="mt-2 text-sm text-gray-500">
+              This vendor has not added any available listings.
+            </p>
           </div>
-        </aside>
-
+        )}
       </section>
     </main>
   );

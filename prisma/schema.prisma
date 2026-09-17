@@ -31,10 +31,20 @@ enum VerificationChannel {
   PHONE
 }
 
+enum VerificationPurpose {
+  SIGNUP
+  PASSWORD_RESET
+}
+
 enum ListingStatus {
   DRAFT
   ACTIVE
   INACTIVE
+}
+
+enum AvailabilityBlockSource {
+  MANUAL
+  BOOKING
 }
 
 model User {
@@ -43,6 +53,14 @@ model User {
 
   email String? @unique
   phone String? @unique
+
+  // Password is never stored directly.
+  // Only the bcrypt hash is stored here.
+  passwordHash String?
+
+  // Optional marketing / correspondence preference.
+  marketingEmailsOptIn   Boolean   @default(false)
+  marketingEmailsOptInAt DateTime?
 
   role   UserRole      @default(CUSTOMER)
   status AccountStatus @default(PENDING_VERIFICATION)
@@ -62,24 +80,54 @@ model VendorProfile {
   id     String @id @default(cuid())
   userId String @unique
 
-  // Completed later during vendor onboarding
+  // Completed later during vendor onboarding.
   businessName String?
 
-  // Temporary legacy field.
-  // We will remove this once all old code uses segments.
+  // Legacy field retained temporarily.
   primaryCategory String?
 
-  // A vendor can belong to multiple marketplace segments
+  // Vendor can operate in multiple marketplace segments.
   segments String[] @default([])
+
+  // ---------------------------------------
+  // LOCATION
+  // ---------------------------------------
+
+  country String @default("Nigeria")
+  state   String?
+  city    String?
+
+  // ---------------------------------------
+  // RATINGS
+  // ---------------------------------------
+
+  // These will later be calculated from real reviews.
+  // Vendors should never edit these themselves.
+  averageRating Float @default(0)
+  reviewCount   Int   @default(0)
+
+  // ---------------------------------------
+  // VERIFICATION
+  // ---------------------------------------
 
   kycStatus    VerificationStatus @default(NOT_STARTED)
   payoutStatus VerificationStatus @default(NOT_STARTED)
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  listings Listing[]
+  // ---------------------------------------
+  // RELATIONSHIPS
+  // ---------------------------------------
+
+  user               User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listings           Listing[]
+  availabilityBlocks VendorAvailabilityBlock[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([state])
+  @@index([city])
+  @@index([averageRating])
+  @@index([kycStatus])
 }
 
 model VerificationCode {
@@ -90,6 +138,7 @@ model VerificationCode {
   codeHash String
 
   channel     VerificationChannel
+  purpose     VerificationPurpose @default(SIGNUP)
   destination String
 
   expiresAt DateTime
@@ -101,7 +150,7 @@ model VerificationCode {
 
   createdAt DateTime @default(now())
 
-  @@index([userId, createdAt])
+  @@index([userId, purpose, createdAt])
 }
 
 model Session {
@@ -131,7 +180,8 @@ model Listing {
 
   category String
 
-  // Store money in kobo.
+  // Money is stored in kobo.
+  // Example:
   // ₦2,500 = 250000 kobo.
   priceKobo Int
 
@@ -146,6 +196,45 @@ model Listing {
   updatedAt DateTime @updatedAt
 
   @@unique([vendorProfileId, slug])
+
   @@index([vendorProfileId])
   @@index([status])
+  @@index([category])
+  @@index([priceKobo])
+  @@index([isAvailable])
+  @@index([category, priceKobo])
+}
+
+model VendorAvailabilityBlock {
+  id String @id @default(cuid())
+
+  vendorProfileId String
+
+  // Vendor is unavailable from startDate through endDate.
+  startDate DateTime
+  endDate   DateTime
+
+  // Examples:
+  // Private event
+  // Equipment unavailable
+  // Already booked
+  reason String?
+
+  // MANUAL:
+  // vendor blocks the dates themselves.
+  //
+  // BOOKING:
+  // Flamingo will eventually create the block
+  // automatically from a confirmed booking.
+  source AvailabilityBlockSource @default(MANUAL)
+
+  vendorProfile VendorProfile @relation(fields: [vendorProfileId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vendorProfileId])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([vendorProfileId, startDate, endDate])
 }
