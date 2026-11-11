@@ -1,4 +1,30 @@
+
 @import "tailwindcss";
+
+/* =========================================
+   FLAMINGO BRAND COLOUR SYSTEM
+========================================= */
+
+@theme {
+  /* Main brand colours */
+  --color-primary: #B60152;
+  --color-primary-dark: #C40032;
+
+  /* Supporting pink colours */
+  --color-pink-light: #F8DCE8;
+  --color-pink-soft: #FFF6F9;
+  --color-pink-subtle: #FCEBF2;
+
+  /* General interface colours */
+  --color-ink: #29232A;
+  --color-surface: #FFFFFF;
+  --color-page: #FFF9FB;
+  --color-border: #F0E3E9;
+}
+
+/* =========================================
+   GENERAL PAGE STYLING
+========================================= */
 
 html {
   scroll-behavior: smooth;
@@ -6,14 +32,18 @@ html {
 
 body {
   margin: 0;
-  background: #faf9fc;
-  color: #171717;
+  background: #FFF9FB;
+  color: #29232A;
   font-family: Arial, Helvetica, sans-serif;
 }
 
 * {
   box-sizing: border-box;
 }
+
+/* =========================================
+   ANIMATIONS
+========================================= */
 
 @keyframes fadeUp {
   from {

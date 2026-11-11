@@ -1,3 +1,4 @@
+
 import Image from "next/image";
 import Link from "next/link";
 
@@ -26,7 +27,7 @@ export default function VendorCard({
   return (
     <Link
       href={`/customer/vendors/${slug}`}
-      className="group block overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-purple-900/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4f2a91] focus-visible:ring-offset-2"
+      className="group block overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-pink-light hover:shadow-xl hover:shadow-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
       {/* VENDOR IMAGE */}
       <div className="relative h-52 overflow-hidden">
@@ -49,11 +50,11 @@ export default function VendorCard({
 
       {/* DETAILS */}
       <div className="p-5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#4f2a91]">
+        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
           {segmentText}
         </p>
 
-        <h3 className="mt-2 text-lg font-semibold text-gray-900">
+        <h3 className="mt-2 text-lg font-semibold text-ink">
           {businessName}
         </h3>
 
@@ -64,7 +65,7 @@ export default function VendorCard({
               : `${listingCount} listings`}
           </span>
 
-          <span className="shrink-0 text-sm font-semibold text-[#4f2a91] transition group-hover:text-[#3e2174]">
+          <span className="shrink-0 text-sm font-semibold text-primary transition group-hover:text-primary-dark">
             View vendor →
           </span>
         </div>

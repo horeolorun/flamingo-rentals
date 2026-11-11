@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -20,27 +21,24 @@ export default async function VendorOnboardingPage() {
     redirect("/auth/signup");
   }
 
-  const businessComplete =
-    Boolean(profile.businessName);
+  const businessComplete = Boolean(profile.businessName);
 
-  const kycComplete =
-    profile.kycStatus === "VERIFIED";
+  const kycComplete = profile.kycStatus === "VERIFIED";
 
-  const payoutComplete =
-    profile.payoutStatus === "VERIFIED";
+  const payoutComplete = profile.payoutStatus === "VERIFIED";
 
   return (
-    <main className="min-h-[calc(100vh-72px)] bg-[#faf9fc] px-6 py-12">
+    <main className="min-h-[calc(100vh-72px)] bg-[#FFF9FB] px-6 py-12">
       <div className="mx-auto max-w-4xl">
-        <p className="text-sm font-semibold uppercase tracking-wide text-[#4f2a91]">
+        <p className="text-sm font-semibold uppercase tracking-wide text-[#B60152]">
           Vendor Setup
         </p>
 
-        <h1 className="mt-2 text-4xl font-bold text-gray-900">
+        <h1 className="mt-2 text-4xl font-bold text-[#29232A]">
           Complete your business setup
         </h1>
 
-        <p className="mt-3 max-w-2xl text-gray-500">
+        <p className="mt-3 max-w-2xl leading-7 text-[#737373]">
           Before you can publish listings and receive bookings,
           we need a few additional details about your business.
         </p>
@@ -48,19 +46,19 @@ export default async function VendorOnboardingPage() {
         <div className="mt-10 space-y-4">
 
           {/* BUSINESS PROFILE */}
-          <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-5 rounded-2xl border border-[#F0E3E9] bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f3edfb] font-bold text-[#4f2a91]">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FCEBF2] font-bold text-[#B60152]">
                   1
                 </span>
 
-                <h2 className="text-lg font-bold text-gray-900">
+                <h2 className="text-lg font-bold text-[#29232A]">
                   Business Profile
                 </h2>
               </div>
 
-              <p className="mt-2 pl-12 text-sm text-gray-500">
+              <p className="mt-2 pl-12 text-sm text-[#737373]">
                 Tell customers about your business.
               </p>
             </div>
@@ -72,7 +70,7 @@ export default async function VendorOnboardingPage() {
             ) : (
               <Link
                 href="/vendor/onboarding/business"
-                className="rounded-xl bg-[#4f2a91] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#3e2174]"
+                className="rounded-xl bg-[#B60152] px-5 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-[#C40032]"
               >
                 Start
               </Link>
@@ -80,19 +78,19 @@ export default async function VendorOnboardingPage() {
           </div>
 
           {/* KYC */}
-          <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-5 rounded-2xl border border-[#F0E3E9] bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f3edfb] font-bold text-[#4f2a91]">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FCEBF2] font-bold text-[#B60152]">
                   2
                 </span>
 
-                <h2 className="text-lg font-bold text-gray-900">
+                <h2 className="text-lg font-bold text-[#29232A]">
                   Identity Verification
                 </h2>
               </div>
 
-              <p className="mt-2 pl-12 text-sm text-gray-500">
+              <p className="mt-2 pl-12 text-sm text-[#737373]">
                 Verify the person responsible for the business.
               </p>
             </div>
@@ -109,19 +107,19 @@ export default async function VendorOnboardingPage() {
           </div>
 
           {/* PAYOUT */}
-          <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-5 rounded-2xl border border-[#F0E3E9] bg-white p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f3edfb] font-bold text-[#4f2a91]">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FCEBF2] font-bold text-[#B60152]">
                   3
                 </span>
 
-                <h2 className="text-lg font-bold text-gray-900">
+                <h2 className="text-lg font-bold text-[#29232A]">
                   Payout Setup
                 </h2>
               </div>
 
-              <p className="mt-2 pl-12 text-sm text-gray-500">
+              <p className="mt-2 pl-12 text-sm text-[#737373]">
                 Add the bank account where Flamingo will send your payouts.
               </p>
             </div>

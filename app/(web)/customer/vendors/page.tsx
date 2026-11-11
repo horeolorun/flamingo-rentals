@@ -1,43 +1,135 @@
+
 import Link from "next/link";
 
 import VendorCard from "@/components/VendorCard";
+import VendorDiscoveryFilters from "./VendorDiscoveryFilters";
 import { vendorSegments } from "@/app/data/vendorSegments";
 import { db } from "@/app/lib/db";
+import { getCurrentUser } from "@/app/lib/session";
 
 type VendorsPageProps = {
   searchParams: Promise<{
     q?: string;
     segment?: string;
-    verified?: string;
+    state?: string;
+    city?: string;
   }>;
 };
+
+const nigerianStates = [
+  "Abia",
+  "Adamawa",
+  "Akwa Ibom",
+  "Anambra",
+  "Bauchi",
+  "Bayelsa",
+  "Benue",
+  "Borno",
+  "Cross River",
+  "Delta",
+  "Ebonyi",
+  "Edo",
+  "Ekiti",
+  "Enugu",
+  "Federal Capital Territory",
+  "Gombe",
+  "Imo",
+  "Jigawa",
+  "Kaduna",
+  "Kano",
+  "Katsina",
+  "Kebbi",
+  "Kogi",
+  "Kwara",
+  "Lagos",
+  "Nasarawa",
+  "Niger",
+  "Ogun",
+  "Ondo",
+  "Osun",
+  "Oyo",
+  "Plateau",
+  "Rivers",
+  "Sokoto",
+  "Taraba",
+  "Yobe",
+  "Zamfara",
+];
+
+function getInitials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
 
 export default async function VendorsPage({
   searchParams,
 }: VendorsPageProps) {
-  const params =
-    await searchParams;
+  const [params, currentUser] = await Promise.all([
+    searchParams,
+    getCurrentUser(),
+  ]);
 
-  const search =
-    String(
-      params.q ?? ""
-    ).trim();
+  const search = String(params.q ?? "").trim();
+  const segment = String(params.segment ?? "").trim();
 
-  const segment =
-    String(
-      params.segment ?? ""
-    ).trim();
+  // Use the customer's saved location unless the URL
+  // explicitly contains a location selection.
+  const hasStateParam = Object.prototype.hasOwnProperty.call(
+    params,
+    "state"
+  );
 
-  const verified =
-    params.verified === "true";
+  const hasCityParam = Object.prototype.hasOwnProperty.call(
+    params,
+    "city"
+  );
 
-  const vendors =
-    await db.vendorProfile.findMany({
+  const savedState =
+    currentUser?.role === "CUSTOMER"
+      ? currentUser.state ?? ""
+      : "";
+
+  const savedCity =
+    currentUser?.role === "CUSTOMER"
+      ? currentUser.city ?? ""
+      : "";
+
+  const selectedState = hasStateParam
+    ? String(params.state ?? "").trim()
+    : savedState;
+
+  const selectedCity = hasCityParam
+    ? String(params.city ?? "").trim()
+    : hasStateParam
+      ? ""
+      : savedCity;
+
+  const locationFilter = {
+    ...(selectedState ? { state: selectedState } : {}),
+    ...(selectedCity ? { city: selectedCity } : {}),
+  };
+
+  // All displayed vendors must have an active account
+  // and completed KYC verification.
+  const baseWhere = {
+    user: {
+      role: "VENDOR" as const,
+      status: "ACTIVE" as const,
+    },
+    kycStatus: "VERIFIED" as const,
+    ...locationFilter,
+  };
+
+  const [vendors, featuredVendors, cityRecords] = await Promise.all([
+    // All vendors matching the selected search,
+    // service and location filters.
+    db.vendorProfile.findMany({
       where: {
-        user: {
-          role: "VENDOR",
-          status: "ACTIVE",
-        },
+        ...baseWhere,
 
         ...(segment
           ? {
@@ -47,32 +139,20 @@ export default async function VendorsPage({
             }
           : {}),
 
-        ...(verified
-          ? {
-              kycStatus:
-                "VERIFIED",
-            }
-          : {}),
-
         ...(search
           ? {
               OR: [
                 {
                   businessName: {
-                    contains:
-                      search,
-                    mode:
-                      "insensitive",
+                    contains: search,
+                    mode: "insensitive" as const,
                   },
                 },
-
                 {
                   user: {
                     fullName: {
-                      contains:
-                        search,
-                      mode:
-                        "insensitive",
+                      contains: search,
+                      mode: "insensitive" as const,
                     },
                   },
                 },
@@ -83,7 +163,6 @@ export default async function VendorsPage({
 
       include: {
         user: true,
-
         listings: {
           where: {
             isAvailable: true,
@@ -91,265 +170,306 @@ export default async function VendorsPage({
         },
       },
 
-      orderBy: {
-        createdAt:
-          "desc",
+      orderBy: [
+        { averageRating: "desc" },
+        { reviewCount: "desc" },
+        { createdAt: "desc" },
+      ],
+    }),
+
+    // Only manually featured vendors appear here.
+    // Location applies, but search and service filters do not.
+    db.vendorProfile.findMany({
+      where: {
+        ...baseWhere,
+        isFeatured: true,
       },
-    });
+
+      take: 10,
+
+      include: {
+        user: true,
+        listings: {
+          where: {
+            isAvailable: true,
+          },
+        },
+      },
+
+      orderBy: [
+        { averageRating: "desc" },
+        { reviewCount: "desc" },
+        { createdAt: "desc" },
+      ],
+    }),
+
+    // Retrieve actual vendor cities within the selected state.
+    selectedState
+      ? db.vendorProfile.findMany({
+          where: {
+            user: {
+              role: "VENDOR",
+              status: "ACTIVE",
+            },
+            kycStatus: "VERIFIED",
+            state: selectedState,
+            city: {
+              not: null,
+            },
+          },
+
+          select: {
+            city: true,
+          },
+
+          distinct: ["city"],
+
+          orderBy: {
+            city: "asc",
+          },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const cities = cityRecords
+    .map((record) => record.city)
+    .filter((city): city is string => Boolean(city));
+
+  const locationLabel = selectedCity
+    ? `${selectedCity}, ${selectedState}`
+    : selectedState || "All locations";
 
   return (
-    <main className="min-h-screen bg-[#faf9fc]">
-
-      {/* PAGE HEADER */}
-      <section className="border-b border-purple-100 bg-gradient-to-br from-[#f5f0fb] via-white to-[#eef9f2]">
-        <div className="mx-auto max-w-7xl px-6 py-14">
-
-          <p className="text-sm font-semibold uppercase tracking-wide text-[#4f2a91]">
+    <main className="min-h-screen bg-[#FFF9FB]">
+      {/* PAGE INTRODUCTION */}
+      <section className="border-b border-[#F0E3E9] bg-gradient-to-br from-[#FCEBF2] via-white to-[#FFF6F9]">
+        <div className="mx-auto max-w-7xl px-5 py-10 sm:px-6 sm:py-12">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#B60152]">
             Flamingo marketplace
           </p>
 
-          <h1 className="mt-3 text-4xl font-bold tracking-tight text-gray-950 md:text-5xl">
-            Find the right vendor
-            for your event
-          </h1>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-[#29232A] sm:text-4xl">
+                Find the right vendor
+                <br className="hidden sm:block" /> for your event.
+              </h1>
 
-          <p className="mt-4 max-w-2xl text-lg leading-8 text-gray-600">
-            Browse event businesses,
-            compare their services and
-            narrow your search to what
-            your event needs.
-          </p>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-[#737373] sm:text-base">
+                Discover trusted event professionals, explore their
+                services and find the right people to bring your
+                plans together.
+              </p>
+            </div>
 
-          {/* SEARCH */}
-          <form
-            action="/customer/vendors"
-            method="GET"
-            className="mt-8 flex max-w-2xl gap-3"
-          >
-            {segment && (
-              <input
-                type="hidden"
-                name="segment"
-                value={segment}
-              />
-            )}
-
-            {verified && (
-              <input
-                type="hidden"
-                name="verified"
-                value="true"
-              />
-            )}
-
-            <input
-              type="search"
-              name="q"
-              defaultValue={search}
-              placeholder="Search vendors..."
-              className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-4 py-3.5 outline-none transition focus:border-[#4f2a91]"
-            />
-
-            <button
-              type="submit"
-              className="rounded-xl bg-[#4f2a91] px-6 py-3.5 font-semibold text-white transition hover:bg-[#3e2174]"
-            >
-              Search
-            </button>
-          </form>
+            <p className="text-sm font-medium text-[#737373]">
+              Showing vendors in{" "}
+              <span className="font-bold text-[#B60152]">
+                {locationLabel}
+              </span>
+            </p>
+          </div>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-6 py-12">
+      <div className="mx-auto max-w-7xl px-5 py-8 sm:px-6 sm:py-10">
+        {/* SEARCH, SERVICE AND LOCATION FILTERS */}
+        <VendorDiscoveryFilters
+          segments={vendorSegments}
+          selectedSegment={segment}
+          search={search}
+          selectedState={selectedState}
+          selectedCity={selectedCity}
+          states={nigerianStates}
+          cities={cities}
+        />
 
-        {/* FILTERS */}
-        <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-
-          <div className="flex flex-col gap-6">
-
-            {/* SEGMENT FILTER */}
+        {/* FEATURED VENDORS */}
+        <section className="mt-10">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-sm font-bold text-gray-900">
-                Service
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#B60152]">
+                Handpicked for you
               </p>
 
-              <div className="mt-3 flex flex-wrap gap-2">
+              <h2 className="mt-1 text-2xl font-bold text-[#29232A]">
+                Featured vendors
+              </h2>
 
-                <Link
-                  href="/customer/vendors"
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                    !segment
-                      ? "border-[#4f2a91] bg-[#4f2a91] text-white"
-                      : "border-gray-200 bg-white text-gray-600 hover:border-[#4f2a91]/30 hover:text-[#4f2a91]"
-                  }`}
-                >
-                  All
-                </Link>
-
-                {vendorSegments.map(
-                  (
-                    vendorSegment
-                  ) => (
-                    <Link
-                      key={
-                        vendorSegment
-                      }
-                      href={`/customer/vendors?segment=${encodeURIComponent(
-                        vendorSegment
-                      )}`}
-                      className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                        segment ===
-                        vendorSegment
-                          ? "border-[#4f2a91] bg-[#4f2a91] text-white"
-                          : "border-gray-200 bg-white text-gray-600 hover:border-[#4f2a91]/30 hover:text-[#4f2a91]"
-                      }`}
-                    >
-                      {
-                        vendorSegment
-                      }
-                    </Link>
-                  )
-                )}
-              </div>
+              <p className="mt-1 text-sm text-[#737373]">
+                Discover businesses selected by Flamingo in{" "}
+                {locationLabel}.
+              </p>
             </div>
 
-            {/* VERIFIED */}
-            <div className="border-t border-gray-100 pt-5">
-              <div className="flex flex-wrap items-center gap-3">
-
-                <p className="mr-2 text-sm font-bold text-gray-900">
-                  Verification
-                </p>
-
-                <Link
-                  href={
-                    segment
-                      ? `/customer/vendors?segment=${encodeURIComponent(
-                          segment
-                        )}`
-                      : "/customer/vendors"
-                  }
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                    !verified
-                      ? "border-[#4f2a91] bg-[#f5f0fc] text-[#4f2a91]"
-                      : "border-gray-200 text-gray-600"
-                  }`}
-                >
-                  All vendors
-                </Link>
-
-                <Link
-                  href={`/customer/vendors?${new URLSearchParams({
-                    ...(segment
-                      ? {
-                          segment,
-                        }
-                      : {}),
-
-                    verified:
-                      "true",
-                  }).toString()}`}
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                    verified
-                      ? "border-green-600 bg-green-50 text-green-700"
-                      : "border-gray-200 text-gray-600"
-                  }`}
-                >
-                  ✓ Verified only
-                </Link>
-
-              </div>
-            </div>
+            <span className="rounded-full bg-[#FCEBF2] px-3 py-1.5 text-xs font-semibold text-[#B60152]">
+              Featured selection
+            </span>
           </div>
-        </div>
 
-        {/* RESULTS INFO */}
-        <div className="mt-10 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          {featuredVendors.length > 0 ? (
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {featuredVendors.map((vendor) => {
+                const businessName =
+                  vendor.businessName?.trim() ||
+                  `${vendor.user.fullName}'s Business`;
 
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-[#4f2a91]">
-              Vendors
+                const initials = getInitials(businessName);
+
+                const location = [
+                  vendor.city,
+                  vendor.state,
+                ]
+                  .filter(Boolean)
+                  .join(", ");
+
+                return (
+                  <Link
+                    key={vendor.id}
+                    href={`/customer/vendors/${vendor.id}`}
+                    className="group rounded-2xl border border-[#F0E3E9] bg-white p-3 transition hover:-translate-y-1 hover:border-[#E7B5CC] hover:shadow-md sm:p-4"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      {vendor.logoUrl ? (
+                        <img
+                          src={vendor.logoUrl}
+                          alt={`${businessName} logo`}
+                          className="h-11 w-11 shrink-0 rounded-xl border border-[#F0E3E9] object-cover sm:h-12 sm:w-12"
+                        />
+                      ) : (
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#FCEBF2] text-sm font-bold text-[#B60152] sm:h-12 sm:w-12">
+                          {initials || "F"}
+                        </div>
+                      )}
+
+                      <span className="rounded-full bg-green-50 px-2 py-1 text-[10px] font-bold text-green-700">
+                        Verified
+                      </span>
+                    </div>
+
+                    <h3 className="mt-3 line-clamp-2 text-sm font-bold text-[#29232A] group-hover:text-[#B60152]">
+                      {businessName}
+                    </h3>
+
+                    <div className="mt-2 flex min-h-8 flex-wrap gap-1">
+                      {vendor.segments.slice(0, 2).map((service) => (
+                        <span
+                          key={service}
+                          className="rounded-full bg-[#FFF6F9] px-2 py-1 text-[10px] font-medium text-[#8A526C]"
+                        >
+                          {service}
+                        </span>
+                      ))}
+                    </div>
+
+                    <p className="mt-2 truncate text-xs text-[#737373]">
+                      <span className="mr-1">⌖</span>
+                      {location || "Location not provided"}
+                    </p>
+
+                    <div className="mt-3 flex items-center justify-between border-t border-[#F5EAF0] pt-3">
+                      <span className="text-xs font-bold text-[#29232A]">
+                        <span className="mr-1 text-amber-500">★</span>
+                        {vendor.averageRating > 0
+                          ? vendor.averageRating.toFixed(1)
+                          : "New"}
+                      </span>
+
+                      <span className="text-[10px] text-[#737373]">
+                        {vendor.reviewCount}{" "}
+                        {vendor.reviewCount === 1 ? "review" : "reviews"}
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-5 rounded-2xl border border-dashed border-[#F0E3E9] bg-white px-6 py-10 text-center">
+              <p className="font-semibold text-[#29232A]">
+                No featured vendors in this location yet.
+              </p>
+
+              <p className="mt-1 text-sm text-[#737373]">
+                Featured businesses will appear here when selected
+                by Flamingo.
+              </p>
+            </div>
+          )}
+        </section>
+
+        {/* ALL MATCHING VENDORS */}
+        <section className="mt-12 border-t border-[#F0E3E9] pt-9">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#B60152]">
+                Explore the marketplace
+              </p>
+
+              <h2 className="mt-1 text-2xl font-bold text-[#29232A]">
+                {segment ? `${segment} vendors` : "All matching vendors"}
+              </h2>
+
+              <p className="mt-1 text-sm text-[#737373]">
+                {search
+                  ? `Search results for "${search}"`
+                  : "Explore verified vendors that match your filters."}
+              </p>
+            </div>
+
+            <p className="text-sm font-semibold text-[#737373]">
+              {vendors.length}{" "}
+              {vendors.length === 1 ? "vendor" : "vendors"} found
             </p>
-
-            <h2 className="mt-1 text-3xl font-bold text-gray-900">
-              {segment
-                ? `${segment} vendors`
-                : "All vendors"}
-            </h2>
           </div>
 
-          <p className="text-sm text-gray-500">
-            {vendors.length ===
-            1
-              ? "1 vendor found"
-              : `${vendors.length} vendors found`}
-          </p>
-        </div>
-
-        {/* VENDOR GRID */}
-        {vendors.length >
-        0 ? (
-          <div className="mt-8 grid gap-7 md:grid-cols-2 lg:grid-cols-3">
-            {vendors.map(
-              (vendor) => {
+          {vendors.length > 0 ? (
+            <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {vendors.map((vendor) => {
                 const businessName =
                   vendor.businessName?.trim() ||
                   `${vendor.user.fullName}'s Business`;
 
                 return (
                   <VendorCard
-                    key={
-                      vendor.id
+                    key={vendor.id}
+                    businessName={businessName}
+                    slug={vendor.id}
+                    segments={vendor.segments}
+                    listingCount={vendor.listings.length}
+                    verified={true}
+                    imageUrl={
+                      vendor.logoUrl || "/home/hero-venue.jpg"
                     }
-                    businessName={
-                      businessName
-                    }
-                    slug={
-                      vendor.id
-                    }
-                    segments={
-                      vendor.segments
-                    }
-                    listingCount={
-                      vendor.listings
-                        .length
-                    }
-                    verified={
-                      vendor.kycStatus ===
-                      "VERIFIED"
-                    }
-                    imageUrl="/home/hero-venue.jpg"
                   />
                 );
-              }
-            )}
-          </div>
-        ) : (
-          <div className="mt-8 rounded-3xl border border-dashed border-gray-200 bg-white px-8 py-16 text-center">
-
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f3edfb] text-2xl">
-              🔎
+              })}
             </div>
+          ) : (
+            <div className="mt-6 rounded-3xl border border-dashed border-[#F0E3E9] bg-white px-8 py-14 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#FCEBF2] text-2xl">
+                🔎
+              </div>
 
-            <h3 className="mt-5 text-xl font-bold text-gray-900">
-              No vendors found
-            </h3>
+              <h3 className="mt-5 text-xl font-bold text-[#29232A]">
+                No matching vendors found
+              </h3>
 
-            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
-              Try changing your
-              search or selecting a
-              different service.
-            </p>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#737373]">
+                Try changing your search, service or location to see
+                more vendors.
+              </p>
 
-            <Link
-              href="/customer/vendors"
-              className="mt-6 inline-flex rounded-xl bg-[#4f2a91] px-5 py-3 text-sm font-semibold text-white"
-            >
-              Clear filters
-            </Link>
-          </div>
-        )}
-      </section>
+              <Link
+                href="/customer/vendors"
+                className="mt-6 inline-flex rounded-xl bg-[#B60152] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#C40032]"
+              >
+                Clear filters
+              </Link>
+            </div>
+          )}
+        </section>
+      </div>
     </main>
   );
 }

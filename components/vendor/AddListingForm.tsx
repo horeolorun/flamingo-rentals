@@ -1,3 +1,4 @@
+
 "use client";
 
 import { FormEvent, useState } from "react";
@@ -42,11 +43,9 @@ export default function AddListingForm() {
     try {
       const response = await fetch("/api/vendor/listings", {
         method: "POST",
-
         headers: {
           "Content-Type": "application/json",
         },
-
         body: JSON.stringify({
           title: title.trim(),
           description: description.trim(),
@@ -59,10 +58,7 @@ export default function AddListingForm() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(
-          data.message || "Could not create listing."
-        );
-
+        setError(data.message || "Could not create listing.");
         return;
       }
 
@@ -79,13 +75,16 @@ export default function AddListingForm() {
     }
   }
 
+  const inputClasses =
+    "mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10";
+
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="space-y-6"
-    >
+    <form onSubmit={handleSubmit} className="space-y-6">
       {error && (
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+        <div
+          role="alert"
+          className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+        >
           {error}
         </div>
       )}
@@ -102,11 +101,9 @@ export default function AddListingForm() {
           id="title"
           type="text"
           value={title}
-          onChange={(event) =>
-            setTitle(event.target.value)
-          }
+          onChange={(event) => setTitle(event.target.value)}
           placeholder="e.g. Chiavari Chair"
-          className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-gray-900 outline-none transition focus:border-[#4f2a91]"
+          className={inputClasses}
         />
       </div>
 
@@ -121,12 +118,10 @@ export default function AddListingForm() {
         <textarea
           id="description"
           value={description}
-          onChange={(event) =>
-            setDescription(event.target.value)
-          }
+          onChange={(event) => setDescription(event.target.value)}
           placeholder="Describe what you are offering..."
           rows={5}
-          className="mt-2 w-full resize-none rounded-xl border border-gray-200 px-4 py-3 text-gray-900 outline-none transition focus:border-[#4f2a91]"
+          className={`${inputClasses} resize-none`}
         />
       </div>
 
@@ -141,42 +136,17 @@ export default function AddListingForm() {
         <select
           id="category"
           value={category}
-          onChange={(event) =>
-            setCategory(event.target.value)
-          }
-          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 outline-none transition focus:border-[#4f2a91]"
+          onChange={(event) => setCategory(event.target.value)}
+          className={inputClasses}
         >
-          <option value="">
-            Select a category
-          </option>
-
-          <option value="Rentals">
-            Rentals
-          </option>
-
-          <option value="Catering">
-            Catering
-          </option>
-
-          <option value="Decor">
-            Decor
-          </option>
-
-          <option value="Sound">
-            Sound & DJ
-          </option>
-
-          <option value="Photography">
-            Photography
-          </option>
-
-          <option value="Venues">
-            Venues
-          </option>
-
-          <option value="Other">
-            Other
-          </option>
+          <option value="">Select a category</option>
+          <option value="Rentals">Rentals</option>
+          <option value="Catering">Catering</option>
+          <option value="Decor">Decor</option>
+          <option value="Sound">Sound & DJ</option>
+          <option value="Photography">Photography</option>
+          <option value="Venues">Venues</option>
+          <option value="Other">Other</option>
         </select>
       </div>
 
@@ -195,11 +165,9 @@ export default function AddListingForm() {
             min="0"
             step="0.01"
             value={priceNaira}
-            onChange={(event) =>
-              setPriceNaira(event.target.value)
-            }
+            onChange={(event) => setPriceNaira(event.target.value)}
             placeholder="2500"
-            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-gray-900 outline-none transition focus:border-[#4f2a91]"
+            className={inputClasses}
           />
         </div>
 
@@ -215,22 +183,18 @@ export default function AddListingForm() {
             id="pricingUnit"
             type="text"
             value={pricingUnit}
-            onChange={(event) =>
-              setPricingUnit(event.target.value)
-            }
+            onChange={(event) => setPricingUnit(event.target.value)}
             placeholder="e.g. per chair"
-            className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-gray-900 outline-none transition focus:border-[#4f2a91]"
+            className={inputClasses}
           />
         </div>
       </div>
 
-      <div className="flex items-center justify-end gap-4 border-t border-gray-100 pt-6">
+      <div className="flex items-center justify-end gap-4 border-t border-border pt-6">
         <button
           type="button"
-          onClick={() =>
-            router.push("/vendor/listings")
-          }
-          className="rounded-xl border border-gray-200 px-6 py-3 font-semibold text-gray-700 transition hover:bg-gray-50"
+          onClick={() => router.push("/vendor/listings")}
+          className="rounded-xl border border-gray-200 px-6 py-3 font-semibold text-gray-700 transition hover:border-pink-light hover:bg-pink-soft"
         >
           Cancel
         </button>
@@ -238,11 +202,9 @@ export default function AddListingForm() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-xl bg-[#4f2a91] px-6 py-3 font-semibold text-white transition hover:bg-[#3e2174] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-xl bg-primary px-6 py-3 font-semibold text-white transition hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isSubmitting
-            ? "Saving..."
-            : "Save as Draft"}
+          {isSubmitting ? "Saving..." : "Save as Draft"}
         </button>
       </div>
     </form>

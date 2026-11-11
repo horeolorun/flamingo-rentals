@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -19,109 +20,64 @@ export default function BusinessProfileForm({
 }: BusinessProfileFormProps) {
   const router = useRouter();
 
-  const [
-    businessName,
-    setBusinessName,
-  ] = useState(initialBusinessName);
+  const [businessName, setBusinessName] = useState(initialBusinessName);
 
-  const [
-    selectedSegments,
-    setSelectedSegments,
-  ] = useState<string[]>(
-    initialSegments
-  );
+  const [selectedSegments, setSelectedSegments] =
+    useState<string[]>(initialSegments);
 
-  const [error, setError] =
-    useState("");
+  const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [isSaving, setIsSaving] =
-    useState(false);
-
-  function toggleSegment(
-    segment: string
-  ) {
-    setSelectedSegments(
-      (current) =>
-        current.includes(segment)
-          ? current.filter(
-              (item) =>
-                item !== segment
-            )
-          : [
-              ...current,
-              segment,
-            ]
+  function toggleSegment(segment: string) {
+    setSelectedSegments((current) =>
+      current.includes(segment)
+        ? current.filter((item) => item !== segment)
+        : [...current, segment]
     );
   }
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>
-  ) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setError("");
 
     if (!businessName.trim()) {
-      setError(
-        "Please enter your business name."
-      );
+      setError("Please enter your business name.");
       return;
     }
 
-    if (
-      selectedSegments.length === 0
-    ) {
-      setError(
-        "Please select at least one business segment."
-      );
+    if (selectedSegments.length === 0) {
+      setError("Please select at least one business segment.");
       return;
     }
 
     setIsSaving(true);
 
     try {
-      const response = await fetch(
-        "/api/vendor/profile",
-        {
-          method: "PATCH",
+      const response = await fetch("/api/vendor/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          businessName: businessName.trim(),
+          segments: selectedSegments,
+        }),
+      });
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            businessName:
-              businessName.trim(),
-
-            segments:
-              selectedSegments,
-          }),
-        }
-      );
-
-      const data =
-        await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
         setError(
-          data.message ||
-            "Could not save business profile."
+          data.message || "Could not save business profile."
         );
-
         return;
       }
 
-      router.push(
-        "/vendor/onboarding"
-      );
-
+      router.push("/vendor/onboarding");
       router.refresh();
     } catch (error) {
-      console.error(
-        "Business profile error:",
-        error
-      );
+      console.error("Business profile error:", error);
 
       setError(
         "Something went wrong while saving your business profile."
@@ -132,12 +88,12 @@ export default function BusinessProfileForm({
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="space-y-8"
-    >
+    <form onSubmit={handleSubmit} className="space-y-8">
       {error && (
-        <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+        <div
+          role="alert"
+          className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+        >
           {error}
         </div>
       )}
@@ -155,17 +111,14 @@ export default function BusinessProfileForm({
           type="text"
           value={businessName}
           onChange={(event) =>
-            setBusinessName(
-              event.target.value
-            )
+            setBusinessName(event.target.value)
           }
           placeholder="e.g. Royal Events & Rentals"
-          className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-gray-900 outline-none transition focus:border-[#4f2a91]"
+          className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-primary focus:ring-2 focus:ring-primary/10"
         />
 
         <p className="mt-2 text-sm text-gray-500">
-          This is the name customers
-          will see on Flamingo.
+          This is the name customers will see on Flamingo.
         </p>
       </div>
 
@@ -175,51 +128,40 @@ export default function BusinessProfileForm({
         </h2>
 
         <p className="mt-1 text-sm text-gray-500">
-          Select everything your
-          business currently provides.
+          Select everything your business currently provides.
         </p>
 
         <div className="mt-4 flex flex-wrap gap-3">
-          {vendorSegments.map(
-            (segment) => {
-              const selected =
-                selectedSegments.includes(
-                  segment
-                );
+          {vendorSegments.map((segment) => {
+            const selected = selectedSegments.includes(segment);
 
-              return (
-                <button
-                  key={segment}
-                  type="button"
-                  onClick={() =>
-                    toggleSegment(
-                      segment
-                    )
-                  }
-                  className={`rounded-full border px-4 py-2.5 text-sm font-semibold transition ${
-                    selected
-                      ? "border-[#4f2a91] bg-[#4f2a91] text-white"
-                      : "border-gray-200 bg-white text-gray-600 hover:border-[#4f2a91]/40"
-                  }`}
-                >
-                  {selected && "✓ "}
-                  {segment}
-                </button>
-              );
-            }
-          )}
+            return (
+              <button
+                key={segment}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => toggleSegment(segment)}
+                className={`rounded-full border px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+                  selected
+                    ? "border-primary bg-primary text-white shadow-sm shadow-primary/10"
+                    : "border-gray-200 bg-white text-gray-600 hover:border-pink-light hover:bg-pink-soft hover:text-primary"
+                }`}
+              >
+                {selected && "✓ "}
+                {segment}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      <div className="flex justify-end border-t border-gray-100 pt-6">
+      <div className="flex justify-end border-t border-border pt-6">
         <button
           type="submit"
           disabled={isSaving}
-          className="rounded-xl bg-[#4f2a91] px-6 py-3 font-semibold text-white transition hover:bg-[#3e2174] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-xl bg-primary px-6 py-3 font-semibold text-white transition hover:bg-primary-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isSaving
-            ? "Saving..."
-            : "Save & Continue"}
+          {isSaving ? "Saving..." : "Save & Continue"}
         </button>
       </div>
     </form>
