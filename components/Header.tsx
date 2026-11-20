@@ -29,10 +29,58 @@ export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const [user, setUser] = useState<CurrentUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSigningOut, setIsSigningOut] = useState(false);
-  const [activeSection, setActiveSection] = useState("");
+ const [user, setUser] = useState<CurrentUser | null>(null);
+const [isLoading, setIsLoading] = useState(true);
+const [isSigningOut, setIsSigningOut] = useState(false);
+const [activeSection, setActiveSection] = useState("");
+const [cartCount, setCartCount] = useState(0);
+
+// LOAD AND REFRESH CART COUNT
+useEffect(() => {
+  if (isLoading) return;
+
+  async function loadCartCount() {
+    if (user && user.role !== "CUSTOMER") {
+      setCartCount(0);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/cart", {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        setCartCount(0);
+        return;
+      }
+
+      const result = await response.json();
+
+      setCartCount(
+        typeof result.data?.itemCount === "number"
+          ? result.data.itemCount
+          : 0
+      );
+    } catch (error) {
+      console.error("Cart count error:", error);
+    }
+  }
+
+  loadCartCount();
+
+  // Refresh after an item is added or removed.
+  window.addEventListener("flamingo:cart-updated", loadCartCount);
+
+  // Refresh when the customer returns to the tab.
+  window.addEventListener("focus", loadCartCount);
+
+  return () => {
+    window.removeEventListener("flamingo:cart-updated", loadCartCount);
+    window.removeEventListener("focus", loadCartCount);
+  };
+}, [isLoading, user, pathname]);
 
   /*
     LOAD CURRENT USER
@@ -384,10 +432,13 @@ export default function Header() {
                 <circle cx="10" cy="20" r="1" />
                 <circle cx="18" cy="20" r="1" />
               </svg>
-              {/* TEMPORARY CART COUNT */}
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white">
-                0
-              </span>
+             {/* LIVE CART COUNT */}
+<span
+  className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white"
+  aria-label={`${cartCount} items in cart`}
+>
+  {cartCount > 99 ? "99+" : cartCount}
+</span>
             </Link>
           )}
 

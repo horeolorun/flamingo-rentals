@@ -2,6 +2,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import AddToCartButton from "@/components/customer/AddToCartButton";
 
 import { db } from "@/app/lib/db";
 
@@ -24,19 +25,18 @@ export default async function VendorPage({
 }: VendorPageProps) {
   const { slug } = await params;
 
+  // Retrieve the vendor, account information and active listings.
   const vendor = await db.vendorProfile.findUnique({
     where: {
       id: slug,
     },
-
     include: {
       user: true,
-
       listings: {
         where: {
+          status: "ACTIVE",
           isAvailable: true,
         },
-
         orderBy: {
           createdAt: "desc",
         },
@@ -44,6 +44,7 @@ export default async function VendorPage({
     },
   });
 
+  // Ensure that the vendor exists and has an active vendor account.
   if (
     !vendor ||
     vendor.user.role !== "VENDOR" ||
@@ -56,11 +57,31 @@ export default async function VendorPage({
     vendor.businessName?.trim() ||
     `${vendor.user.fullName}'s Business`;
 
+  // Temporary diagnostic information for cart eligibility.
+  console.log("FLAMINGO CART ELIGIBILITY:", {
+    vendorName: businessName,
+    kycStatus: vendor.kycStatus,
+    accountStatus: vendor.user.status,
+    listings: vendor.listings.map((listing) => ({
+      title: listing.title,
+      id: listing.id,
+      status: listing.status,
+      isAvailable: listing.isAvailable,
+      canAddToCart:
+        listing.status === "ACTIVE" &&
+        listing.isAvailable &&
+        vendor.kycStatus === "VERIFIED" &&
+        vendor.user.status === "ACTIVE",
+    })),
+  });
+
   return (
     <main className="min-h-screen bg-[#FFF9FB]">
+
       {/* VENDOR HERO */}
       <section className="border-b border-[#F0E3E9] bg-white">
         <div className="mx-auto grid max-w-7xl gap-10 px-6 py-12 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+
           <div className="relative h-[320px] overflow-hidden rounded-3xl">
             <Image
               src="/home/hero-venue.jpg"
@@ -117,6 +138,7 @@ export default async function VendorPage({
 
       {/* LISTINGS */}
       <section className="mx-auto max-w-7xl px-6 py-16">
+
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-[#B60152]">
             Services & products
@@ -129,45 +151,53 @@ export default async function VendorPage({
 
         {vendor.listings.length > 0 ? (
           <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {vendor.listings.map((listing) => (
-              <article
-                key={listing.id}
-                className="rounded-3xl border border-[#F0E3E9] bg-white p-6 shadow-sm transition hover:border-[#F8DCE8] hover:shadow-md"
-              >
-                <span className="rounded-full bg-[#FCEBF2] px-3 py-1.5 text-xs font-semibold text-[#B60152]">
-                  {listing.category}
-                </span>
 
-                <h3 className="mt-5 text-xl font-bold text-[#29232A]">
-                  {listing.title}
-                </h3>
+            {vendor.listings.map((listing) => {
+              const canAddToCart =
+                listing.status === "ACTIVE" &&
+                listing.isAvailable &&
+                vendor.kycStatus === "VERIFIED" &&
+                vendor.user.status === "ACTIVE";
 
-                {listing.description && (
-                  <p className="mt-3 line-clamp-3 text-sm leading-6 text-[#737373]">
-                    {listing.description}
-                  </p>
-                )}
+              return (
+                <article
+                  key={listing.id}
+                  className="rounded-3xl border border-[#F0E3E9] bg-white p-6 shadow-sm transition hover:border-[#F8DCE8] hover:shadow-md"
+                >
+                  <span className="rounded-full bg-[#FCEBF2] px-3 py-1.5 text-xs font-semibold text-[#B60152]">
+                    {listing.category}
+                  </span>
 
-                <div className="mt-6 border-t border-[#F0E3E9] pt-5">
-                  <p className="text-2xl font-bold text-[#29232A]">
-                    {formatNaira(listing.priceKobo)}
-                  </p>
+                  <h3 className="mt-5 text-xl font-bold text-[#29232A]">
+                    {listing.title}
+                  </h3>
 
-                  {listing.pricingUnit && (
-                    <p className="mt-1 text-sm text-[#737373]">
-                      per {listing.pricingUnit}
+                  {listing.description && (
+                    <p className="mt-3 line-clamp-3 text-sm leading-6 text-[#737373]">
+                      {listing.description}
                     </p>
                   )}
-                </div>
 
-                <button
-                  type="button"
-                  className="mt-6 w-full rounded-xl bg-[#B60152] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#C40032] focus:outline-none focus:ring-2 focus:ring-[#B60152]/30 focus:ring-offset-2"
-                >
-                  Add to booking cart
-                </button>
-              </article>
-            ))}
+                  <div className="mt-6 border-t border-[#F0E3E9] pt-5">
+                    <p className="text-2xl font-bold text-[#29232A]">
+                      {formatNaira(listing.priceKobo)}
+                    </p>
+
+                    {listing.pricingUnit && (
+                      <p className="mt-1 text-sm text-[#737373]">
+                        per {listing.pricingUnit}
+                      </p>
+                    )}
+                  </div>
+
+                  <AddToCartButton
+                    listingId={listing.id}
+                    canAddToCart={canAddToCart}
+                  />
+                </article>
+              );
+            })}
+
           </div>
         ) : (
           <div className="mt-10 rounded-3xl border border-dashed border-[#F0E3E9] bg-white px-8 py-12 text-center">
@@ -176,10 +206,11 @@ export default async function VendorPage({
             </h3>
 
             <p className="mt-2 text-sm text-[#737373]">
-              This vendor has not added any available listings.
+              This vendor has not added any active and available listings.
             </p>
           </div>
         )}
+
       </section>
     </main>
   );

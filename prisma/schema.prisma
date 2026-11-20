@@ -57,6 +57,17 @@ enum BookingStatus {
   COMPLETED
 }
 
+enum BundleStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+
+enum CartBundleType {
+  VENDOR
+  CUSTOMER
+}
+
 model User {
   id        String  @id @default(cuid())
   fullName  String
@@ -133,6 +144,7 @@ model VendorProfile {
   @@index([averageRating])
   @@index([kycStatus])
   @@index([isFeatured])
+  vendorBundles VendorBundle[]
 }
 
 model VerificationCode {
@@ -208,6 +220,8 @@ model Listing {
   @@index([priceKobo])
   @@index([isAvailable])
   @@index([category, priceKobo])
+  vendorBundleItems VendorBundleItem[]
+cartBundleItems  CartBundleItem[]
 }
 
 model VendorAvailabilityBlock {
@@ -248,6 +262,7 @@ model Cart {
 
   @@index([userId])
   @@index([guestId])
+  bundles CartBundle[]
 }
 
 model CartItem {
@@ -269,6 +284,7 @@ model CartItem {
 
   @@index([cartId])
   @@index([listingId])
+  isSelected Boolean @default(true)
 }
 
 model Booking {
@@ -297,4 +313,100 @@ model Booking {
   @@index([vendorProfileId])
   @@index([listingId])
   @@index([status])
+}
+
+model VendorBundle {
+  id String @id @default(cuid())
+
+  vendorProfileId String
+
+  title       String
+  description String?
+
+  // Vendor's fixed package price, stored in kobo
+  priceKobo Int
+
+  status BundleStatus @default(DRAFT)
+
+  vendorProfile VendorProfile    @relation(fields: [vendorProfileId], references: [id], onDelete: Cascade)
+  items         VendorBundleItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vendorProfileId])
+  @@index([status])
+  cartBundles CartBundle[]
+}
+
+model VendorBundleItem {
+  id String @id @default(cuid())
+
+  bundleId  String
+  listingId String
+
+  quantity Int @default(1)
+
+  bundle VendorBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  listing Listing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bundleId, listingId])
+  @@index([listingId])
+}
+
+model CartBundle {
+  id String @id @default(cuid())
+
+  cartId String
+
+  // VENDOR = fixed-price vendor package
+  // CUSTOMER = customer-created collection
+  type CartBundleType
+
+  // Set only when this came from a vendor-created package
+  vendorBundleId String?
+
+  // Snapshot of the bundle details when added to cart
+  title            String
+  packagePriceKobo Int
+
+  quantity   Int     @default(1)
+  isSelected Boolean @default(true)
+
+  cart Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  vendorBundle VendorBundle? @relation(fields: [vendorBundleId], references: [id], onDelete: SetNull)
+
+  items CartBundleItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cartId])
+  @@index([vendorBundleId])
+  @@index([type])
+}
+
+model CartBundleItem {
+  id String @id @default(cuid())
+
+  cartBundleId String
+  listingId    String
+
+  quantity Int @default(1)
+
+  // Price per listing unit when the bundle entered the cart
+  unitPriceKobo Int
+
+  cartBundle CartBundle @relation(fields: [cartBundleId], references: [id], onDelete: Cascade)
+  listing    Listing    @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartBundleId, listingId])
+  @@index([listingId])
 }
