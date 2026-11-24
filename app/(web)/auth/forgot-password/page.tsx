@@ -87,11 +87,12 @@ export default function ForgotPasswordPage() {
         return;
       }
 
-      if (data.devOtp) {
-        alert(
-          `Development reset OTP: ${data.devOtp}`
-        );
-      }
+    if (data.testOtp) {
+  sessionStorage.setItem(
+    "flamingoPasswordResetOtp",
+    data.testOtp
+  );
+}
 
       router.push(
         `/auth/reset-password?email=${encodeURIComponent(

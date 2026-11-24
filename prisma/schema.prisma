@@ -68,6 +68,36 @@ enum CartBundleType {
   CUSTOMER
 }
 
+enum BookingCancellationActor {
+  CUSTOMER
+  VENDOR
+  ADMIN
+}
+
+enum RefundStatus {
+  NOT_REQUIRED
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+}
+
+enum WalletPurpose {
+  CUSTOMER_AVAILABLE
+  CUSTOMER_DEPOSIT
+  VENDOR_AVAILABLE
+  VENDOR_PENDING
+  PLATFORM_REVENUE
+  PLATFORM_SUSPENSE
+  PLATFORM_REFUND
+}
+
+enum WalletStatus {
+  ACTIVE
+  FROZEN
+  CLOSED
+}
+
 model User {
   id        String  @id @default(cuid())
   fullName  String
@@ -97,6 +127,13 @@ model User {
   cart     Cart?
   bookings Booking[] @relation("CustomerBookings")
 
+  // Customer wallets
+  availableWalletId String? @unique
+  depositWalletId   String? @unique
+
+  availableWallet Wallet? @relation("UserAvailableWallet", fields: [availableWalletId], references: [id], onDelete: Restrict)
+  depositWallet   Wallet? @relation("UserDepositWallet", fields: [depositWalletId], references: [id], onDelete: Restrict)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -106,6 +143,13 @@ model VendorProfile {
   userId String @unique
 
   businessName String?
+
+  // Vendor wallets
+  availableWalletId String? @unique
+  pendingWalletId   String? @unique
+
+  availableWallet Wallet? @relation("VendorAvailableWallet", fields: [availableWalletId], references: [id], onDelete: Restrict)
+  pendingWallet   Wallet? @relation("VendorPendingWallet", fields: [pendingWalletId], references: [id], onDelete: Restrict)
 
   // Vendor branding
   logoUrl    String?
@@ -199,7 +243,8 @@ model Listing {
 
   // Money is stored in kobo
   priceKobo Int
-
+  // Total physical units available for this listing
+  totalQuantity Int @default(1)
   pricingUnit String?
 
   status      ListingStatus @default(DRAFT)
@@ -222,6 +267,61 @@ model Listing {
   @@index([category, priceKobo])
   vendorBundleItems VendorBundleItem[]
 cartBundleItems  CartBundleItem[]
+}
+
+model Wallet {
+  id String @id @default(cuid())
+
+  purpose  WalletPurpose
+  currency String       @default("NGN")
+  status   WalletStatus @default(ACTIVE)
+
+  // Cached projection of the ledger balance
+  balance Decimal @default(0) @db.Decimal(19, 4)
+
+  // Minimum permitted balance
+  minimumBalance Decimal @default(0) @db.Decimal(19, 4)
+
+  transfersAllowed Boolean @default(false)
+
+  // Optimistic locking
+  version Int @default(0)
+
+  // Wallet ownership relationships
+  customerAvailableOf User?          @relation("UserAvailableWallet")
+  customerDepositOf   User?          @relation("UserDepositWallet")
+  vendorAvailableOf   VendorProfile? @relation("VendorAvailableWallet")
+  vendorPendingOf     VendorProfile? @relation("VendorPendingWallet")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([purpose])
+  @@index([status])
+}
+
+model Statement {
+  id String @id @default(cuid())
+
+  // Scalar reference; database foreign key is managed by migration SQL
+  walletId String
+
+  inflow  Decimal @default(0) @db.Decimal(19, 4)
+  outflow Decimal @default(0) @db.Decimal(19, 4)
+
+  balance Decimal @db.Decimal(19, 4)
+
+  narration String
+  reference String?
+
+  transactionId     String?
+  transactionUnitId String? @unique
+
+  postedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([walletId, postedAt])
+  @@index([transactionId])
 }
 
 model VendorAvailabilityBlock {
@@ -297,10 +397,25 @@ model Booking {
   startDate DateTime
   endDate   DateTime
 
+  // Number of units requested
+  quantity Int @default(1)
+
   // Snapshot of price at booking time
   totalPriceKobo Int
 
   status BookingStatus @default(PENDING_VENDOR_APPROVAL)
+
+  // Cancellation information
+  cancellationReason String?
+  cancelledBy        BookingCancellationActor?
+  cancelledAt        DateTime?
+
+  // Refund tracking - independent of payment provider
+  refundStatus       RefundStatus @default(NOT_REQUIRED)
+  refundAmountKobo  Int?
+  refundReference   String?
+  refundRequestedAt DateTime?
+  refundedAt        DateTime?
 
   customer User          @relation("CustomerBookings", fields: [customerId], references: [id])
   vendor   VendorProfile @relation(fields: [vendorProfileId], references: [id])
@@ -313,6 +428,7 @@ model Booking {
   @@index([vendorProfileId])
   @@index([listingId])
   @@index([status])
+  @@index([listingId, status, startDate, endDate])
 }
 
 model VendorBundle {

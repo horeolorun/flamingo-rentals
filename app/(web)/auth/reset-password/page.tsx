@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -11,51 +12,30 @@ import { useRouter } from "next/navigation";
 export default function ResetPasswordPage() {
   const router = useRouter();
 
-  const [email, setEmail] =
-    useState("");
+  const [email, setEmail] = useState("");
+  const [emailLoaded, setEmailLoaded] = useState(false);
+  const [testOtp, setTestOtp] = useState("");
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [emailLoaded, setEmailLoaded] =
-    useState(false);
-
-  const [code, setCode] =
-    useState("");
-
-  const [password, setPassword] =
-    useState("");
-
-  const [
-    confirmPassword,
-    setConfirmPassword,
-  ] = useState("");
-
-  const [error, setError] =
-    useState("");
-
-  const [
-    isSubmitting,
-    setIsSubmitting,
-  ] = useState(false);
-
-  /*
-    Read the email only after the page
-    has loaded in the browser.
-
-    This avoids useSearchParams during
-    Next.js production prerendering.
-  */
   useEffect(() => {
-    const params =
-      new URLSearchParams(
-        window.location.search
-      );
-
-    const emailParam =
-      params.get("email") ?? "";
-
-    setEmail(
-      emailParam.trim().toLowerCase()
+    const params = new URLSearchParams(
+      window.location.search
     );
 
+    const emailParam = params.get("email") ?? "";
+
+    setEmail(emailParam.trim().toLowerCase());
+
+    const storedOtp =
+      sessionStorage.getItem(
+        "flamingoPasswordResetOtp"
+      ) ?? "";
+
+    setTestOtp(storedOtp);
     setEmailLoaded(true);
   }, []);
 
@@ -63,22 +43,17 @@ export default function ResetPasswordPage() {
     event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault();
-
     setError("");
 
     if (!email) {
       setError(
         "Your email address is missing. Please restart the password reset process."
       );
-
       return;
     }
 
     if (!code.trim()) {
-      setError(
-        "Enter your verification code."
-      );
-
+      setError("Enter your verification code.");
       return;
     }
 
@@ -86,66 +61,49 @@ export default function ResetPasswordPage() {
       setError(
         "Password must be at least 8 characters."
       );
-
       return;
     }
 
-    if (
-      password !== confirmPassword
-    ) {
-      setError(
-        "Passwords do not match."
-      );
-
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
-      const response =
-        await fetch(
-          "/api/auth/password/reset",
-          {
-            method: "POST",
+      const response = await fetch(
+        "/api/auth/password/reset",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            code: code.trim(),
+            password,
+          }),
+        }
+      );
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body: JSON.stringify({
-              email,
-              code: code.trim(),
-              password,
-            }),
-          }
-        );
-
-      const data =
-        await response.json();
+      const data = await response.json();
 
       if (!response.ok) {
         setError(
-          data.message ||
-            "Could not reset password."
+          data.message || "Could not reset password."
         );
-
         return;
       }
 
-      router.replace(
-        "/auth/login?reset=1"
-      );
-    } catch (error) {
-      console.error(
-        "Reset password error:",
-        error
+      sessionStorage.removeItem(
+        "flamingoPasswordResetOtp"
       );
 
-      setError(
-        "Something went wrong."
-      );
+      router.replace("/auth/login?reset=1");
+    } catch (error) {
+      console.error("Reset password error:", error);
+      setError("Something went wrong.");
     } finally {
       setIsSubmitting(false);
     }
@@ -169,11 +127,10 @@ export default function ResetPasswordPage() {
             </p>
           ) : email ? (
             <p className="mt-3 text-gray-500">
-              Enter the code sent to{" "}
+              Enter the code generated for{" "}
               <span className="font-semibold text-gray-700">
                 {email}
-              </span>
-              .
+              </span>.
             </p>
           ) : (
             <p className="mt-3 text-red-600">
@@ -187,6 +144,22 @@ export default function ResetPasswordPage() {
           onSubmit={handleSubmit}
           className="mt-10 rounded-3xl border border-gray-100 bg-white p-8 shadow-sm"
         >
+          {testOtp && (
+            <div className="mb-6 rounded-xl border border-purple-200 bg-purple-50 p-5">
+              <p className="text-sm font-semibold text-[#4f2a91]">
+                Password reset verification code
+              </p>
+
+              <p className="mt-2 text-3xl font-bold tracking-[0.3em] text-[#4f2a91]">
+                {testOtp}
+              </p>
+
+              <p className="mt-2 text-xs text-gray-600">
+                Enter this code below. It expires in 10 minutes.
+              </p>
+            </div>
+          )}
+
           <div>
             <label
               htmlFor="code"
@@ -202,9 +175,7 @@ export default function ResetPasswordPage() {
               maxLength={6}
               value={code}
               onChange={(event) =>
-                setCode(
-                  event.target.value
-                )
+                setCode(event.target.value)
               }
               placeholder="123456"
               className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 text-center text-xl font-semibold tracking-[0.3em] outline-none focus:border-[#4f2a91]"
@@ -225,9 +196,7 @@ export default function ResetPasswordPage() {
               autoComplete="new-password"
               value={password}
               onChange={(event) =>
-                setPassword(
-                  event.target.value
-                )
+                setPassword(event.target.value)
               }
               placeholder="At least 8 characters"
               className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-[#4f2a91]"
@@ -248,9 +217,7 @@ export default function ResetPasswordPage() {
               autoComplete="new-password"
               value={confirmPassword}
               onChange={(event) =>
-                setConfirmPassword(
-                  event.target.value
-                )
+                setConfirmPassword(event.target.value)
               }
               placeholder="Repeat your password"
               className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-3 outline-none focus:border-[#4f2a91]"

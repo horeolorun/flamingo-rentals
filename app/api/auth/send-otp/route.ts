@@ -1,3 +1,4 @@
+
 import {
   createHmac,
   randomInt,
@@ -6,15 +7,13 @@ import {
 import { NextResponse } from "next/server";
 
 import { db } from "@/app/lib/db";
-import { sendOtpEmail } from "../../../lib/email";
 
 export const runtime = "nodejs";
 
 const OTP_EXPIRY_MINUTES = 10;
 
 function hashOtp(code: string) {
-  const secret =
-    process.env.OTP_SECRET;
+  const secret = process.env.OTP_SECRET;
 
   if (!secret) {
     throw new Error(
@@ -22,24 +21,16 @@ function hashOtp(code: string) {
     );
   }
 
-  return createHmac(
-    "sha256",
-    secret
-  )
+  return createHmac("sha256", secret)
     .update(code)
     .digest("hex");
 }
 
-export async function POST(
-  request: Request
-) {
+export async function POST(request: Request) {
   try {
-    const body =
-      await request.json();
+    const body = await request.json();
 
-    const email = String(
-      body.email ?? ""
-    )
+    const email = String(body.email ?? "")
       .trim()
       .toLowerCase();
 
@@ -47,32 +38,25 @@ export async function POST(
       return NextResponse.json(
         {
           success: false,
-          message:
-            "Email address is required.",
+          message: "Email address is required.",
         },
-        {
-          status: 400,
-        }
+        { status: 400 }
       );
     }
 
-    const user =
-      await db.user.findUnique({
-        where: {
-          email,
-        },
-      });
+    const user = await db.user.findUnique({
+      where: {
+        email,
+      },
+    });
 
     if (!user) {
       return NextResponse.json(
         {
           success: false,
-          message:
-            "Account not found.",
+          message: "Account not found.",
         },
-        {
-          status: 404,
-        }
+        { status: 404 }
       );
     }
 
@@ -86,117 +70,52 @@ export async function POST(
           message:
             "This email address is already verified.",
         },
-        {
-          status: 409,
-        }
+        { status: 409 }
       );
     }
 
-    const code = randomInt(
-      100000,
-      1000000
-    ).toString();
+    // Generate a random six-digit OTP.
+    const code = randomInt(100000, 1000000).toString();
 
-    const codeHash =
-      hashOtp(code);
+    // Store only the hashed OTP.
+    const codeHash = hashOtp(code);
 
-    const expiresAt =
-      new Date(
-        Date.now() +
-          OTP_EXPIRY_MINUTES *
-            60 *
-            1000
-      );
+    // OTP expires after 10 minutes.
+    const expiresAt = new Date(
+      Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000
+    );
 
+    // Remove previous unused signup OTPs.
     await db.verificationCode.deleteMany({
       where: {
-        userId:
-          user.id,
-
-        channel:
-          "EMAIL",
-
-        purpose:
-          "SIGNUP",
-
-        usedAt:
-          null,
+        userId: user.id,
+        channel: "EMAIL",
+        purpose: "SIGNUP",
+        usedAt: null,
       },
     });
 
-    const verificationCode =
-      await db.verificationCode.create({
-        data: {
-          userId:
-            user.id,
+    // Save the new OTP.
+    await db.verificationCode.create({
+      data: {
+        userId: user.id,
+        codeHash,
+        channel: "EMAIL",
+        purpose: "SIGNUP",
+        destination: email,
+        expiresAt,
+      },
+    });
 
-          codeHash,
-
-          channel:
-            "EMAIL",
-
-          purpose:
-            "SIGNUP",
-
-          destination:
-            email,
-
-          expiresAt,
-        },
-      });
-
-    try {
-      await sendOtpEmail({
-        to: email,
-        code,
-        purpose:
-          "SIGNUP",
-      });
-    } catch (emailError) {
-      /*
-        Remove the OTP if the email
-        could not actually be sent.
-      */
-      await db.verificationCode.delete({
-        where: {
-          id:
-            verificationCode.id,
-        },
-      });
-
-      throw emailError;
-    }
-
-    if (
-      process.env.NODE_ENV !==
-      "production"
-    ) {
-      console.log(
-        `Development OTP for ${email}: ${code}`
-      );
-
-      return NextResponse.json({
-        success: true,
-
-        message:
-          "Verification code sent to your email.",
-
-        devOtp:
-          code,
-      });
-    }
-
+    // TEMPORARY: Return the OTP directly to the website.
     return NextResponse.json({
       success: true,
-
-      message:
-        "Verification code sent to your email.",
+      message: "Your verification code has been generated.",
+      testOtp: code,
     });
+
   } catch (error) {
-    console.error(
-      "Send OTP error:",
-      error
-    );
+    console.error("Send OTP error:", error);
 
     const message =
       error instanceof Error
@@ -206,16 +125,12 @@ export async function POST(
     return NextResponse.json(
       {
         success: false,
-
         message:
-          process.env.NODE_ENV ===
-          "development"
+          process.env.NODE_ENV === "development"
             ? message
-            : "Could not send verification code.",
+            : "Could not generate verification code.",
       },
-      {
-        status: 500,
-      }
+      { status: 500 }
     );
   }
 }

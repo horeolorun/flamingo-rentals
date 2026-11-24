@@ -270,9 +270,15 @@ export default function SignupPage() {
         return;
       }
 
-      if (otpData.devOtp) {
-        alert(`Development OTP: ${otpData.devOtp}`);
-      }
+ const testOtp =
+  otpData.testOtp;
+
+if (testOtp) {
+  sessionStorage.setItem(
+    "flamingoTestOtp",
+    testOtp
+  );
+}
 
       router.push(
         `/auth/verify?email=${encodeURIComponent(cleanEmail)}`

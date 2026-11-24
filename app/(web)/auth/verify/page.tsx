@@ -32,6 +32,12 @@ export default function VerifyPage() {
   ] =
     useState("");
 
+    const [
+  testOtp,
+  setTestOtp,
+] =
+  useState("");
+
   const [
     error,
     setError,
@@ -56,23 +62,32 @@ export default function VerifyPage() {
   ] =
     useState(false);
 
-  useEffect(() => {
-    const params =
-      new URLSearchParams(
-        window.location.search
-      );
-
-    const emailParam =
-      params.get("email") ?? "";
-
-    setEmail(
-      emailParam
-        .trim()
-        .toLowerCase()
+ useEffect(() => {
+  const params =
+    new URLSearchParams(
+      window.location.search
     );
 
-    setEmailLoaded(true);
-  }, []);
+  const emailParam =
+    params.get("email") ?? "";
+
+  setEmail(
+    emailParam
+      .trim()
+      .toLowerCase()
+  );
+
+  const storedTestOtp =
+    sessionStorage.getItem(
+      "flamingoTestOtp"
+    ) ?? "";
+
+  setTestOtp(storedTestOtp);
+
+  setEmailLoaded(true);
+}, []);
+
+   
 
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>
@@ -200,11 +215,23 @@ export default function VerifyPage() {
         return;
       }
 
-      if (data.devOtp) {
-        alert(
-          `Development OTP: ${data.devOtp}`
-        );
-      }
+      const newTestOtp =
+  data.testOtp || data.devOtp;
+
+if (newTestOtp) {
+  setTestOtp(newTestOtp);
+
+  sessionStorage.setItem(
+    "flamingoTestOtp",
+    newTestOtp
+  );
+} else {
+  setTestOtp("");
+
+  sessionStorage.removeItem(
+    "flamingoTestOtp"
+  );
+}
 
       setMessage(
         "A new verification code has been generated."
@@ -256,6 +283,22 @@ export default function VerifyPage() {
             <p className="mt-3 text-sm leading-6 text-red-600">
               Your email address is missing. Please restart the signup process.
             </p>
+          )}
+
+          {testOtp && (
+            <div className="mt-6 rounded-xl border border-purple-200 bg-purple-50 p-5">
+              <p className="text-sm font-semibold text-[#4f2a91]">
+                Test verification code
+              </p>
+
+              <p className="mt-2 text-3xl font-bold tracking-[0.3em] text-[#4f2a91]">
+                {testOtp}
+              </p>
+
+              <p className="mt-2 text-xs text-gray-600">
+                Use this code to complete your test registration.
+              </p>
+            </div>
           )}
 
           <form
