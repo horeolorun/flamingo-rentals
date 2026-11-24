@@ -68,20 +68,6 @@ enum CartBundleType {
   CUSTOMER
 }
 
-enum BookingCancellationActor {
-  CUSTOMER
-  VENDOR
-  ADMIN
-}
-
-enum RefundStatus {
-  NOT_REQUIRED
-  PENDING
-  PROCESSING
-  SUCCEEDED
-  FAILED
-}
-
 enum WalletPurpose {
   CUSTOMER_AVAILABLE
   CUSTOMER_DEPOSIT
@@ -127,7 +113,7 @@ model User {
   cart     Cart?
   bookings Booking[] @relation("CustomerBookings")
 
-  // Customer wallets
+  // Customer wallets (null for non-customers). The user holds the reference.
   availableWalletId String? @unique
   depositWalletId   String? @unique
 
@@ -173,6 +159,13 @@ model VendorProfile {
   // Verification
   kycStatus    VerificationStatus @default(NOT_STARTED)
   payoutStatus VerificationStatus @default(NOT_STARTED)
+
+  // Vendor wallets. The vendor profile holds the reference.
+  availableWalletId String? @unique
+  pendingWalletId   String? @unique
+
+  availableWallet Wallet? @relation("VendorAvailableWallet", fields: [availableWalletId], references: [id], onDelete: Restrict)
+  pendingWallet   Wallet? @relation("VendorPendingWallet", fields: [pendingWalletId], references: [id], onDelete: Restrict)
 
   // Relationships
   user               User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -525,4 +518,72 @@ model CartBundleItem {
 
   @@unique([cartBundleId, listingId])
   @@index([listingId])
+}  
+
+model Wallet {
+  id String @id @default(cuid())
+
+  purpose  WalletPurpose
+  currency String        @default("NGN")
+  status   WalletStatus  @default(ACTIVE)
+
+  // Money is stored as an exact decimal with 4 decimal places (naira, not kobo).
+  // Cached projection of the ledger: never edited outside a ledger-posting routine.
+  balance Decimal @default(0) @db.Decimal(19, 4)
+
+  // Lowest balance the wallet may reach after a debit.
+  // 0 = no overdraft; positive = amount that must stay in the wallet;
+  // negative = permitted overdraft (e.g. vendor clawbacks).
+  // Enforced in the service layer AND by a CHECK constraint (see migration note).
+  minimumBalance Decimal @default(0) @db.Decimal(19, 4)
+
+  // Whether the owner may initiate transfers/withdrawals from this wallet.
+  // Defaults to false (safe); set true explicitly for the available-balance wallets.
+  // System-driven movements (hold, release, refund) are governed by `status`.
+  transfersAllowed Boolean @default(false)
+
+  // Optimistic locking: increment on every balance change.
+  version Int @default(0)
+
+  // Back-relations (each wallet has at most one owner)
+  customerAvailableOf User?          @relation("UserAvailableWallet")
+  customerDepositOf   User?          @relation("UserDepositWallet")
+  vendorAvailableOf   VendorProfile? @relation("VendorAvailableWallet")
+  vendorPendingOf     VendorProfile? @relation("VendorPendingWallet")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([purpose])
+  @@index([status])
+}
+
+// One immutable line per posted wallet movement. Insert-only: no updatedAt.
+model Statement {
+  id String @id @default(cuid())
+
+  // Scalar reference only (no Prisma relation, so Wallet carries no statements field).
+  // The foreign key is added in the migration SQL.
+  walletId String
+
+  // Exactly one of inflow/outflow is non-zero on any line (CHECK in migration).
+  inflow  Decimal @default(0) @db.Decimal(19, 4)
+  outflow Decimal @default(0) @db.Decimal(19, 4)
+
+  // Wallet balance immediately after this line posted
+  balance Decimal @db.Decimal(19, 4)
+
+  narration String
+  reference String?
+
+  // Plain columns for now. Become relations to Transaction and TransactionUnit
+  // when those models are added.
+  transactionId     String?
+  transactionUnitId String? @unique
+
+  postedAt  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([walletId, postedAt])
+  @@index([transactionId])
 }
