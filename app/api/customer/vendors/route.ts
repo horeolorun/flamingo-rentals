@@ -53,7 +53,7 @@ export async function GET() {
           profile.listings.length,
 
         imageUrl:
-          "/home/hero-venue.jpg",
+          profile.logoUrl || "/home/hero-venue.jpg",
       }));
 
     return NextResponse.json({

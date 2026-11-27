@@ -134,6 +134,10 @@ export async function POST(request: Request) {
     const category = String(body.category ?? "").trim();
     const pricingUnit = String(body.pricingUnit ?? "").trim();
     const priceKobo = Number(body.priceKobo);
+    const totalQuantityRaw =
+      body.totalQuantity === undefined || body.totalQuantity === ""
+        ? 1
+        : Number(body.totalQuantity);
 
     if (!title) {
       return NextResponse.json(
@@ -171,6 +175,18 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!Number.isInteger(totalQuantityRaw) || totalQuantityRaw < 1 || totalQuantityRaw > 9999) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Total stock quantity must be a whole number of at least 1",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
     const listing = await db.listing.create({
       data: {
         vendorProfileId: user.vendorProfile.id,
@@ -179,6 +195,7 @@ export async function POST(request: Request) {
         description: description || null,
         category,
         priceKobo,
+        totalQuantity: totalQuantityRaw,
         pricingUnit: pricingUnit || null,
         status: "DRAFT",
         isAvailable: true,

@@ -23,7 +23,7 @@ const categories = [
     description: "Beautiful styling for every occasion",
   },
   {
-    name: "Photography",
+    name: "Photography & Video",
     icon: "📸",
     description: "Capture every important moment",
   },
@@ -73,7 +73,8 @@ export default async function Home() {
         profile.user.status === "ACTIVE" &&
         profile.listings.length > 0
     )
-    .slice(0, 3)
+    .sort((a, b) => Number(b.isFeatured) - Number(a.isFeatured))
+    .slice(0, 6)
     .map((profile) => ({
       id: profile.id,
       slug: profile.id,
@@ -83,7 +84,7 @@ export default async function Home() {
       segments: profile.segments,
       listingCount: profile.listings.length,
       verified: profile.kycStatus === "VERIFIED",
-      imageUrl: "/home/hero-venue.jpg",
+      imageUrl: profile.logoUrl || "/home/hero-venue.jpg",
     }));
 
   return (

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { db } from "../../../../lib/db";
 import { createSession } from "../../../../lib/session";
+import { mergeGuestCartToUser } from "../../../../lib/booking";
 
 export const runtime = "nodejs";
 
@@ -140,6 +141,10 @@ const code =
     }
 
     await createSession(user.id);
+
+    if (user.role === "CUSTOMER") {
+      await mergeGuestCartToUser(user.id);
+    }
 
     await db.verificationCode.update({
       where: {

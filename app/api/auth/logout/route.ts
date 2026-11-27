@@ -5,6 +5,7 @@ import {
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { getExpiredCookieOptions } from "@/app/lib/cookies";
 import { db } from "@/app/lib/db";
 
 export const runtime = "nodejs";
@@ -20,7 +21,7 @@ function hashSessionToken(
     .digest("hex");
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const cookieStore =
       await cookies();
@@ -50,25 +51,15 @@ export async function POST() {
           "Signed out successfully.",
       });
 
+    const expiredOptions =
+      await getExpiredCookieOptions(
+        request
+      );
+
     response.cookies.set(
       SESSION_COOKIE_NAME,
       "",
-      {
-        httpOnly: true,
-
-        secure:
-          process.env.NODE_ENV ===
-          "production",
-
-        sameSite: "lax",
-
-        path: "/",
-
-        expires:
-          new Date(0),
-
-        maxAge: 0,
-      }
+      expiredOptions
     );
 
     return response;
@@ -88,25 +79,15 @@ export async function POST() {
         success: true,
       });
 
+    const expiredOptions =
+      await getExpiredCookieOptions(
+        request
+      );
+
     response.cookies.set(
       SESSION_COOKIE_NAME,
       "",
-      {
-        httpOnly: true,
-
-        secure:
-          process.env.NODE_ENV ===
-          "production",
-
-        sameSite: "lax",
-
-        path: "/",
-
-        expires:
-          new Date(0),
-
-        maxAge: 0,
-      }
+      expiredOptions
     );
 
     return response;

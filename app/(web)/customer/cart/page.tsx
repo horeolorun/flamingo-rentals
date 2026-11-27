@@ -1,8 +1,18 @@
-
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  AlertCircle,
+  Calendar,
+  CreditCard,
+  Edit3,
+  ShieldCheck,
+  Trash2,
+  X,
+} from "lucide-react";
+import BookingDetailsModal from "@/components/customer/BookingDetailsModal";
 
 type CartItem = {
   id: string;
@@ -12,6 +22,7 @@ type CartItem = {
     slug: string;
     category: string;
     priceKobo: number;
+    totalQuantity: number;
     pricingUnit: string | null;
     status: "DRAFT" | "ACTIVE" | "INACTIVE";
     isAvailable: boolean;
@@ -24,6 +35,12 @@ type CartItem = {
   isSelected: boolean;
   startDate: string | null;
   endDate: string | null;
+  hasRequiredBookingDetails: boolean;
+  availability: {
+    available: boolean;
+    remainingQuantity: number;
+    reason: string | null;
+  };
   lineTotalKobo: number;
 };
 
@@ -34,6 +51,22 @@ type CartData = {
   selectedItemCount: number;
   subtotalKobo: number;
   selectedSubtotalKobo: number;
+};
+
+type CheckoutSessionData = {
+  checkoutReference: string;
+  expiresAt: string;
+  amountKobo: number;
+  currency: string;
+  items: {
+    cartItemId: string;
+    listingId: string;
+    title: string;
+    quantity: number;
+    lineTotalKobo: number;
+    startDate: string;
+    endDate: string;
+  }[];
 };
 
 function formatPrice(amountKobo: number) {
@@ -51,19 +84,26 @@ function formatDate(date: string | null) {
     day: "numeric",
     month: "short",
     year: "numeric",
+    timeZone: "UTC",
   }).format(new Date(date));
 }
 
 export default function CustomerCartPage() {
+  const router = useRouter();
+
   const [cart, setCart] = useState<CartData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<CartItem | null>(null);
+  const [checkoutSession, setCheckoutSession] =
+    useState<CheckoutSessionData | null>(null);
+  const [isStartingCheckout, setIsStartingCheckout] = useState(false);
+  const [isVerifyingPayment, setIsVerifyingPayment] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
   const loadCart = useCallback(async () => {
-    setError("");
-
     try {
       const response = await fetch("/api/cart", {
         method: "GET",
@@ -76,6 +116,7 @@ export default function CustomerCartPage() {
         throw new Error(result.message || "Could not load your cart.");
       }
 
+      setError("");
       setCart(result.data);
     } catch (err) {
       console.error("Load cart error:", err);
@@ -90,13 +131,36 @@ export default function CustomerCartPage() {
   }, []);
 
   useEffect(() => {
-    loadCart();
-  }, [loadCart]);
+    let active = true;
 
-  async function updateCartItem(
-    itemId: string,
-    changes: { quantity?: number; isSelected?: boolean }
-  ) {
+    fetch("/api/cart", { method: "GET", cache: "no-store" })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!active) return;
+        if (!response.ok) {
+          throw new Error(result.message || "Could not load your cart.");
+        }
+        setCart(result.data);
+      })
+      .catch((err) => {
+        if (!active) return;
+        console.error("Load cart error:", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Something went wrong while loading your cart."
+        );
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function updateCartItemSelection(itemId: string, isSelected: boolean) {
     setLoadingItemId(itemId);
     setError("");
     setNotice("");
@@ -104,10 +168,8 @@ export default function CustomerCartPage() {
     try {
       const response = await fetch(`/api/cart/items/${itemId}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(changes),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isSelected }),
       });
 
       const result = await response.json();
@@ -117,11 +179,9 @@ export default function CustomerCartPage() {
       }
 
       setCart(result.data);
-
       window.dispatchEvent(new Event("flamingo:cart-updated"));
     } catch (err) {
       console.error("Cart update error:", err);
-
       setError(
         err instanceof Error
           ? err.message
@@ -133,12 +193,6 @@ export default function CustomerCartPage() {
   }
 
   async function removeCartItem(itemId: string) {
-    const confirmed = window.confirm(
-      "Are you sure you want to remove this item from your cart?"
-    );
-
-    if (!confirmed) return;
-
     setLoadingItemId(itemId);
     setError("");
     setNotice("");
@@ -154,38 +208,98 @@ export default function CustomerCartPage() {
         throw new Error(result.message || "Could not remove this item.");
       }
 
+      setConfirmRemoveId(null);
       setCart(result.data);
-
       window.dispatchEvent(new Event("flamingo:cart-updated"));
     } catch (err) {
       console.error("Remove cart item error:", err);
-
       setError(
-        err instanceof Error
-          ? err.message
-          : "Could not remove this item."
+        err instanceof Error ? err.message : "Could not remove this item."
       );
     } finally {
       setLoadingItemId(null);
     }
   }
 
-  function handleCheckout() {
+  async function handleStartCheckout() {
     if (!cart || cart.selectedItemCount === 0) return;
 
-    setNotice(
-      "Your selected items are ready. The booking and payment checkout process has not been connected yet."
-    );
+    setError("");
+    setNotice("");
+    setIsStartingCheckout(true);
+
+    try {
+      const response = await fetch("/api/bookings/checkout", {
+        method: "POST",
+      });
+
+      const result = await response.json();
+
+      if (response.status === 401 && result.requiresAuth) {
+        router.push("/auth/login?next=/customer/cart");
+        return;
+      }
+
+      if (!response.ok) {
+        setError(result.message || "Could not start checkout.");
+        return;
+      }
+
+      setCheckoutSession(result.data);
+    } catch (err) {
+      console.error("Start checkout error:", err);
+      setError("Something went wrong while starting checkout.");
+    } finally {
+      setIsStartingCheckout(false);
+    }
   }
 
-  const selectedItems = cart?.items.filter(
-    (item) => item.isSelected
-  ) ?? [];
+  async function handleVerifyPayment() {
+    if (!checkoutSession) return;
+
+    setError("");
+    setIsVerifyingPayment(true);
+
+    try {
+      const response = await fetch("/api/bookings/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          checkoutReference: checkoutSession.checkoutReference,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.message || "Payment verification failed.");
+        setCheckoutSession(null);
+        await loadCart();
+        return;
+      }
+
+      setCheckoutSession(null);
+      window.dispatchEvent(new Event("flamingo:cart-updated"));
+      router.push("/customer/bookings?confirmed=1");
+    } catch (err) {
+      console.error("Verify payment error:", err);
+      setError("Could not complete server payment verification.");
+    } finally {
+      setIsVerifyingPayment(false);
+    }
+  }
+
+  const selectedItems = cart?.items.filter((item) => item.isSelected) ?? [];
 
   const hasUnavailableSelectedItem = selectedItems.some(
     (item) =>
       item.listing.status !== "ACTIVE" ||
-      !item.listing.isAvailable
+      !item.listing.isAvailable ||
+      (item.hasRequiredBookingDetails && !item.availability.available)
+  );
+
+  const hasIncompleteSelectedItem = selectedItems.some(
+    (item) => !item.hasRequiredBookingDetails
   );
 
   const allSelected =
@@ -198,17 +312,13 @@ export default function CustomerCartPage() {
 
     const nextSelection = !allSelected;
 
-    // Update each item through the API so the selection persists.
-    // Process sequentially to avoid overlapping updates to the same cart.
     void (async () => {
       setError("");
       setNotice("");
 
       for (const item of cart.items) {
         if (item.isSelected !== nextSelection) {
-          await updateCartItem(item.id, {
-            isSelected: nextSelection,
-          });
+          await updateCartItemSelection(item.id, nextSelection);
         }
       }
     })();
@@ -245,13 +355,14 @@ export default function CustomerCartPage() {
                 Your Cart
               </h1>
               <p className="mt-2 text-sm text-gray-500">
-                Review your selected rentals and services before checkout.
+                Complete booking dates and quantity for each item before
+                proceeding to payment.
               </p>
             </div>
 
             <div className="rounded-xl border border-[#F0E3E9] bg-white px-4 py-2 text-sm font-semibold text-gray-600">
               {cart?.itemCount ?? 0}{" "}
-              {(cart?.itemCount ?? 0) === 1 ? "item" : "items"} in cart
+              {(cart?.itemCount ?? 0) === 1 ? "unit" : "units"} in cart
             </div>
           </div>
         </div>
@@ -277,7 +388,7 @@ export default function CustomerCartPage() {
         {notice && (
           <div
             role="status"
-            className="mb-6 rounded-xl border border-[#EAC6D5] bg-white px-4 py-3 text-sm text-gray-700"
+            className="mb-6 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
           >
             {notice}
           </div>
@@ -295,7 +406,7 @@ export default function CustomerCartPage() {
             </h2>
 
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-gray-500">
-              You haven't added any rentals or services yet. Explore our
+              You have not added any rentals or services yet. Explore our
               vendors to find what you need for your event.
             </p>
 
@@ -307,7 +418,7 @@ export default function CustomerCartPage() {
             </Link>
           </div>
         ) : (
-          <div className="grid gap-8 lg:grid-cols-[1fr_340px]">
+          <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
             {/* CART ITEMS */}
             <section className="space-y-4">
               {/* SELECT ALL */}
@@ -332,7 +443,9 @@ export default function CustomerCartPage() {
               {cart.items.map((item) => {
                 const isUnavailable =
                   item.listing.status !== "ACTIVE" ||
-                  !item.listing.isAvailable;
+                  !item.listing.isAvailable ||
+                  (item.hasRequiredBookingDetails &&
+                    !item.availability.available);
 
                 const isUpdating = loadingItemId === item.id;
 
@@ -344,28 +457,27 @@ export default function CustomerCartPage() {
                     }`}
                   >
                     <div className="flex flex-col gap-4 sm:flex-row">
-                      {/* CHECKBOX */}
                       <div className="flex items-start gap-3">
                         <input
                           type="checkbox"
                           checked={item.isSelected}
                           onChange={(event) =>
-                            updateCartItem(item.id, {
-                              isSelected: event.target.checked,
-                            })
+                            updateCartItemSelection(
+                              item.id,
+                              event.target.checked
+                            )
                           }
                           disabled={isUpdating || loadingItemId !== null}
                           aria-label={`Select ${item.listing.title}`}
                           className="mt-2 h-4 w-4 shrink-0 accent-[#B60152]"
                         />
 
-                        {/* IMAGE PLACEHOLDER */}
-                        <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-xl bg-[#FFF0F5] text-4xl sm:hidden">
+                        <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl bg-[#FFF0F5] text-3xl sm:hidden">
                           🛍️
                         </div>
                       </div>
 
-                      <div className="hidden h-28 w-28 shrink-0 items-center justify-center rounded-xl bg-[#FFF0F5] text-4xl sm:flex">
+                      <div className="hidden h-24 w-24 shrink-0 items-center justify-center rounded-xl bg-[#FFF0F5] text-3xl sm:flex">
                         🛍️
                       </div>
 
@@ -377,14 +489,13 @@ export default function CustomerCartPage() {
                               {item.listing.category}
                             </p>
 
-                           <h3 className="mt-1 text-lg font-bold text-gray-900">
-  {item.listing.title}
-</h3>
+                            <h3 className="mt-1 text-lg font-bold text-gray-900">
+                              {item.listing.title}
+                            </h3>
 
                             <p className="mt-1 text-sm text-gray-500">
                               Vendor:{" "}
-                              {item.listing.vendor.businessName ||
-                                "Vendor"}
+                              {item.listing.vendor.businessName || "Vendor"}
                             </p>
                           </div>
 
@@ -397,78 +508,82 @@ export default function CustomerCartPage() {
                               {formatPrice(item.listing.priceKobo)}{" "}
                               {item.listing.pricingUnit
                                 ? `/ ${item.listing.pricingUnit}`
-                                : "per unit"}
+                                : "per unit"}{" "}
+                              × {item.quantity}
                             </p>
                           </div>
                         </div>
 
-                        {item.startDate && item.endDate && (
-                          <p className="mt-3 text-xs text-gray-500">
-                            Rental period: {formatDate(item.startDate)} –{" "}
-                            {formatDate(item.endDate)}
-                          </p>
-                        )}
+                        {/* BOOKING DETAILS STATUS */}
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#FFF6F9] px-3 py-1.5 text-xs font-semibold text-[#29232A]">
+                            Qty: {item.quantity}
+                          </span>
+
+                          {item.hasRequiredBookingDetails ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#FCEBF2] px-3 py-1.5 text-xs font-semibold text-[#B60152]">
+                              <Calendar className="h-3.5 w-3.5" />
+                              {formatDate(item.startDate)} –{" "}
+                              {formatDate(item.endDate)}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">
+                              <AlertCircle className="h-3.5 w-3.5" />
+                              Booking dates required before checkout
+                            </span>
+                          )}
+                        </div>
 
                         {isUnavailable && (
-                          <p className="mt-3 text-xs font-semibold text-red-600">
-                            This listing is currently unavailable. It cannot
-                            be checked out.
+                          <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-red-600">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                            {item.availability.reason ||
+                              "This listing is currently unavailable and cannot be checked out."}
                           </p>
                         )}
 
-                        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                          {/* QUANTITY */}
-                          <div className="flex items-center rounded-xl border border-gray-200">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateCartItem(item.id, {
-                                  quantity: item.quantity - 1,
-                                })
-                              }
-                              disabled={
-                                isUpdating ||
-                                loadingItemId !== null ||
-                                item.quantity <= 1
-                              }
-                              aria-label="Decrease quantity"
-                              className="h-9 w-9 text-lg font-semibold text-gray-600 transition hover:bg-gray-50 disabled:opacity-30"
-                            >
-                              −
-                            </button>
-
-                            <span className="min-w-10 text-center text-sm font-semibold text-gray-900">
-                              {item.quantity}
-                            </span>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateCartItem(item.id, {
-                                  quantity: item.quantity + 1,
-                                })
-                              }
-                              disabled={
-                                isUpdating ||
-                                loadingItemId !== null ||
-                                item.quantity >= 99
-                              }
-                              aria-label="Increase quantity"
-                              className="h-9 w-9 text-lg font-semibold text-gray-600 transition hover:bg-gray-50 disabled:opacity-30"
-                            >
-                              +
-                            </button>
-                          </div>
-
-                          {/* REMOVE */}
+                        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[#F0E3E9] pt-3.5">
                           <button
                             type="button"
-                            onClick={() => removeCartItem(item.id)}
-                            disabled={loadingItemId !== null}
-                            className="text-sm font-semibold text-gray-500 transition hover:text-red-600 disabled:opacity-40"
+                            onClick={() => setEditingItem(item)}
+                            disabled={isUpdating || loadingItemId !== null}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#EAC6D5] bg-[#FFF9FB] px-3.5 py-2 text-xs font-semibold text-[#B60152] transition hover:bg-[#FCEBF2] disabled:opacity-40"
                           >
-                            {isUpdating ? "Updating..." : "Remove"}
+                            <Edit3 className="h-3.5 w-3.5" />
+                            {item.hasRequiredBookingDetails
+                              ? "Edit booking details"
+                              : "Add booking dates & quantity"}
                           </button>
+
+                          {confirmRemoveId === item.id ? (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => removeCartItem(item.id)}
+                                disabled={isUpdating}
+                                className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                              >
+                                {isUpdating ? "Removing..." : "Confirm remove"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmRemoveId(null)}
+                                className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                              >
+                                Keep
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmRemoveId(item.id)}
+                              disabled={loadingItemId !== null}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500 transition hover:text-red-600 disabled:opacity-40"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              Remove
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -485,7 +600,7 @@ export default function CustomerCartPage() {
 
               <div className="mt-6 space-y-4 text-sm">
                 <div className="flex justify-between gap-3 text-gray-500">
-                  <span>Total items in cart</span>
+                  <span>Total units in cart</span>
                   <span className="font-semibold text-gray-800">
                     {cart.itemCount}
                   </span>
@@ -508,7 +623,7 @@ export default function CustomerCartPage() {
                 <div className="border-t border-dashed border-gray-200 pt-4">
                   <div className="flex items-center justify-between gap-3">
                     <span className="font-bold text-gray-900">
-                      Estimated total
+                      Total due at checkout
                     </span>
                     <span className="text-xl font-bold text-primary">
                       {formatPrice(cart.selectedSubtotalKobo)}
@@ -516,36 +631,164 @@ export default function CustomerCartPage() {
                   </div>
 
                   <p className="mt-2 text-xs leading-5 text-gray-400">
-                    Final booking costs may change depending on rental dates,
-                    vendor approval, delivery and other applicable charges.
+                    Availability is rechecked at checkout and upon server-side
+                    payment verification before your booking is confirmed.
                   </p>
                 </div>
               </div>
 
               <button
                 type="button"
-                onClick={handleCheckout}
+                onClick={handleStartCheckout}
                 disabled={
                   cart.selectedItemCount === 0 ||
                   hasUnavailableSelectedItem ||
-                  loadingItemId !== null
+                  hasIncompleteSelectedItem ||
+                  loadingItemId !== null ||
+                  isStartingCheckout
                 }
                 className="mt-7 w-full rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-white shadow-sm transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-gray-300"
               >
-                {hasUnavailableSelectedItem
-                  ? "Remove unavailable items to continue"
-                  : cart.selectedItemCount === 0
-                    ? "Select items to continue"
-                    : "Proceed to Checkout"}
+                {isStartingCheckout
+                  ? "Checking availability..."
+                  : hasUnavailableSelectedItem
+                    ? "Resolve unavailable items to continue"
+                    : hasIncompleteSelectedItem
+                      ? "Add booking dates to continue"
+                      : cart.selectedItemCount === 0
+                        ? "Select items to continue"
+                        : "Proceed to Checkout"}
               </button>
 
               <p className="mt-4 text-center text-xs leading-5 text-gray-400">
-                You will review your booking details before confirming.
+                Bookings are confirmed automatically once payment is verified.
               </p>
             </aside>
           </div>
         )}
       </div>
+
+      {/* EDIT BOOKING DETAILS MODAL */}
+      {editingItem && (
+        <BookingDetailsModal
+          isOpen={Boolean(editingItem)}
+          mode="edit"
+          cartItemId={editingItem.id}
+          listingId={editingItem.listing.id}
+          listingTitle={editingItem.listing.title}
+          priceKobo={editingItem.listing.priceKobo}
+          pricingUnit={editingItem.listing.pricingUnit}
+          totalQuantity={editingItem.listing.totalQuantity}
+          initialStartDate={editingItem.startDate}
+          initialEndDate={editingItem.endDate}
+          initialQuantity={editingItem.quantity}
+          onClose={() => setEditingItem(null)}
+          onCompleted={(msg) => {
+            setNotice(msg);
+            void loadCart();
+          }}
+        />
+      )}
+
+      {/* CHECKOUT & SERVER PAYMENT VERIFICATION MODAL */}
+      {checkoutSession && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#29232A]/50 px-4 py-6 backdrop-blur-xs"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="checkout-verify-title"
+        >
+          <div className="w-full max-w-lg rounded-3xl border border-[#F0E3E9] bg-white p-6 shadow-2xl sm:p-7">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-[#B60152]">
+                  Checkout Confirmation
+                </p>
+                <h2
+                  id="checkout-verify-title"
+                  className="mt-1 text-xl font-bold text-[#29232A]"
+                >
+                  Complete & verify payment
+                </h2>
+                <p className="mt-1 text-xs text-[#737373]">
+                  Reference: {checkoutSession.checkoutReference}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCheckoutSession(null)}
+                disabled={isVerifyingPayment}
+                aria-label="Close checkout"
+                className="rounded-xl p-2 text-gray-400 transition hover:bg-[#FFF6F9] hover:text-[#29232A]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3 rounded-2xl border border-[#F0E3E9] bg-[#FFF9FB] p-4">
+              {checkoutSession.items.map((item) => (
+                <div
+                  key={item.cartItemId}
+                  className="flex items-start justify-between gap-3 text-sm"
+                >
+                  <div>
+                    <p className="font-semibold text-[#29232A]">
+                      {item.title} × {item.quantity}
+                    </p>
+                    <p className="text-xs text-[#737373]">
+                      {formatDate(item.startDate)} – {formatDate(item.endDate)}
+                    </p>
+                  </div>
+                  <p className="font-semibold text-[#29232A]">
+                    {formatPrice(item.lineTotalKobo)}
+                  </p>
+                </div>
+              ))}
+
+              <div className="flex items-center justify-between border-t border-dashed border-[#EAC6D5] pt-3">
+                <span className="text-sm font-bold text-[#29232A]">
+                  Total to pay
+                </span>
+                <span className="text-xl font-bold text-[#B60152]">
+                  {formatPrice(checkoutSession.amountKobo)}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-start gap-2.5 rounded-xl bg-green-50 px-4 py-3 text-xs leading-5 text-green-800">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-green-700" />
+              <span>
+                No external payment gateway is connected yet. Confirming will
+                run server-side payment verification, recheck live inventory,
+                and confirm your bookings as paid.
+              </span>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-2.5 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setCheckoutSession(null)}
+                disabled={isVerifyingPayment}
+                className="rounded-xl border border-[#F0E3E9] px-5 py-2.5 text-sm font-semibold text-[#737373] transition hover:bg-[#FFF9FB]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleVerifyPayment}
+                disabled={isVerifyingPayment}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#B60152] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#C40032] disabled:opacity-50"
+              >
+                <CreditCard className="h-4 w-4" />
+                {isVerifyingPayment
+                  ? "Verifying payment..."
+                  : "Pay & Confirm Booking"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

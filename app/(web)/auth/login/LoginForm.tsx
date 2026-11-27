@@ -63,10 +63,17 @@ export default function LoginForm({
         return;
       }
 
+      const params = new URLSearchParams(window.location.search);
+      const nextParam = params.get("next") ?? "";
+      const safeNext =
+        nextParam.startsWith("/") && !nextParam.startsWith("//")
+          ? nextParam
+          : "";
+
       if (data.user?.role === "VENDOR") {
         router.replace("/vendor/dashboard");
       } else if (data.user?.role === "CUSTOMER") {
-        router.replace("/#explore");
+        router.replace(safeNext || "/#explore");
       } else {
         setError("Your account type could not be identified.");
         return;

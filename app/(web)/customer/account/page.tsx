@@ -1,4 +1,5 @@
 
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/app/lib/session";
@@ -26,8 +27,23 @@ export default async function CustomerAccountPage() {
         </h1>
 
         <p className="mt-3 text-[#737373]">
-          Manage your Flamingo customer account.
+          Manage your Flamingo customer account and bookings.
         </p>
+
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link
+            href="/customer/bookings"
+            className="rounded-xl bg-[#B60152] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#C40032]"
+          >
+            View My Bookings
+          </Link>
+          <Link
+            href="/customer/cart"
+            className="rounded-xl border border-[#EAC6D5] bg-white px-5 py-3 text-sm font-semibold text-[#B60152] transition hover:bg-[#FCEBF2]"
+          >
+            Open Booking Cart
+          </Link>
+        </div>
 
         <div className="mt-10 grid gap-5 md:grid-cols-2">
           <div className="rounded-2xl border border-[#F0E3E9] bg-white p-6 shadow-sm">

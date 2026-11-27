@@ -1,14 +1,18 @@
-
 import { randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+import { getAppCookieOptions } from "@/app/lib/cookies";
 import { db } from "@/app/lib/db";
 import { getCurrentUser } from "@/app/lib/session";
+import {
+  checkListingAvailability,
+  GUEST_CART_COOKIE_NAME,
+  parseBookingDate,
+} from "@/app/lib/booking";
 
 export const runtime = "nodejs";
 
-const GUEST_CART_COOKIE_NAME = "flamingo_guest_cart";
 const GUEST_CART_DURATION_SECONDS = 30 * 24 * 60 * 60;
 
 type AddToCartBody = {
@@ -20,7 +24,6 @@ type AddToCartBody = {
 
 export async function POST(request: Request) {
   try {
-    // 1. VALIDATE REQUEST BODY
     let body: AddToCartBody;
 
     try {
@@ -33,12 +36,9 @@ export async function POST(request: Request) {
     }
 
     const listingId =
-      typeof body.listingId === "string"
-        ? body.listingId.trim()
-        : "";
+      typeof body.listingId === "string" ? body.listingId.trim() : "";
 
-    const quantity =
-      body.quantity === undefined ? 1 : body.quantity;
+    const quantity = body.quantity === undefined ? 1 : body.quantity;
 
     if (!listingId) {
       return NextResponse.json(
@@ -59,36 +59,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. VALIDATE RENTAL DATES
-    function parseDate(value: unknown): Date | null | undefined {
-      if (value === undefined || value === null || value === "") {
-        return null;
-      }
+    const hasStart =
+      body.startDate !== undefined &&
+      body.startDate !== null &&
+      body.startDate !== "";
+    const hasEnd =
+      body.endDate !== undefined &&
+      body.endDate !== null &&
+      body.endDate !== "";
 
-      if (typeof value !== "string") {
-        return undefined;
-      }
-
-      const date = new Date(value);
-
-      if (Number.isNaN(date.getTime())) {
-        return undefined;
-      }
-
-      return date;
-    }
-
-    const startDate = parseDate(body.startDate);
-    const endDate = parseDate(body.endDate);
-
-    if (startDate === undefined || endDate === undefined) {
-      return NextResponse.json(
-        { message: "Please provide valid rental dates." },
-        { status: 400 }
-      );
-    }
-
-    if (Boolean(startDate) !== Boolean(endDate)) {
+    if (hasStart !== hasEnd) {
       return NextResponse.json(
         {
           message:
@@ -98,20 +78,30 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      startDate &&
-      endDate &&
-      endDate.getTime() <= startDate.getTime()
-    ) {
-      return NextResponse.json(
-        {
-          message: "The end date must be after the start date.",
-        },
-        { status: 400 }
-      );
+    let startDate: Date | null = null;
+    let endDate: Date | null = null;
+
+    if (hasStart && hasEnd) {
+      startDate = parseBookingDate(body.startDate);
+      endDate = parseBookingDate(body.endDate);
+
+      if (!startDate || !endDate) {
+        return NextResponse.json(
+          { message: "Please provide valid rental dates." },
+          { status: 400 }
+        );
+      }
+
+      if (endDate.getTime() < startDate.getTime()) {
+        return NextResponse.json(
+          {
+            message: "End date cannot be before the start date.",
+          },
+          { status: 400 }
+        );
+      }
     }
 
-    // 3. IDENTIFY CUSTOMER OR GUEST
     const currentUser = await getCurrentUser();
     const cookieStore = await cookies();
 
@@ -128,9 +118,7 @@ export async function POST(request: Request) {
     let newGuestId: string | null = null;
 
     if (!currentUser) {
-      guestId = cookieStore.get(
-        GUEST_CART_COOKIE_NAME
-      )?.value;
+      guestId = cookieStore.get(GUEST_CART_COOKIE_NAME)?.value;
 
       if (!guestId) {
         guestId = randomBytes(32).toString("hex");
@@ -138,17 +126,14 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4. CHECK THAT THE LISTING IS AVAILABLE
     const listing = await db.listing.findFirst({
       where: {
         id: listingId,
         status: "ACTIVE",
         isAvailable: true,
-
         vendorProfile: {
           is: {
             kycStatus: "VERIFIED",
-
             user: {
               is: {
                 role: "VENDOR",
@@ -158,37 +143,62 @@ export async function POST(request: Request) {
           },
         },
       },
-
       select: {
         id: true,
+        totalQuantity: true,
       },
     });
 
     if (!listing) {
       return NextResponse.json(
         {
-          message:
-            "This listing is unavailable or no longer active.",
+          message: "This listing is unavailable or no longer active.",
         },
         { status: 404 }
       );
     }
 
-    // 5. CREATE OR RETRIEVE CART AND ADD ITEM
+    const totalStock = Math.max(1, listing.totalQuantity ?? 1);
+    if (quantity > totalStock) {
+      return NextResponse.json(
+        {
+          message: `Only ${totalStock} unit${totalStock === 1 ? "" : "s"} available for this listing.`,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (startDate && endDate) {
+      const availability = await checkListingAvailability(db, {
+        listingId,
+        startDate,
+        endDate,
+        quantity,
+      });
+
+      if (!availability.available) {
+        return NextResponse.json(
+          {
+            message:
+              availability.reason ||
+              "This listing is unavailable for the selected dates.",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const result = await db.$transaction(async (tx) => {
       const cart = await tx.cart.upsert({
         where: currentUser
           ? { userId: currentUser.id }
           : { guestId: guestId! },
-
         update: {},
-
         create: currentUser
           ? { userId: currentUser.id }
           : { guestId: guestId! },
       });
 
-      // Look for the same listing with the same rental dates.
       const existingItem = await tx.cartItem.findFirst({
         where: {
           cartId: cart.id,
@@ -202,22 +212,31 @@ export async function POST(request: Request) {
       let created = false;
 
       if (existingItem) {
-        const newQuantity =
-          existingItem.quantity + quantity;
+        const newQuantity = existingItem.quantity + quantity;
 
         if (newQuantity > 99) {
           throw new Error("CART_QUANTITY_LIMIT");
         }
 
-        cartItem = await tx.cartItem.update({
-          where: {
-            id: existingItem.id,
-          },
+        if (newQuantity > totalStock) {
+          throw new Error("INSUFFICIENT_INVENTORY");
+        }
 
-          data: {
+        if (startDate && endDate) {
+          const recheck = await checkListingAvailability(tx, {
+            listingId,
+            startDate,
+            endDate,
             quantity: newQuantity,
-          },
+          });
+          if (!recheck.available) {
+            throw new Error("INSUFFICIENT_INVENTORY");
+          }
+        }
 
+        cartItem = await tx.cartItem.update({
+          where: { id: existingItem.id },
+          data: { quantity: newQuantity },
           include: {
             listing: {
               select: {
@@ -226,6 +245,7 @@ export async function POST(request: Request) {
                 slug: true,
                 category: true,
                 priceKobo: true,
+                totalQuantity: true,
                 pricingUnit: true,
               },
             },
@@ -240,7 +260,6 @@ export async function POST(request: Request) {
             startDate,
             endDate,
           },
-
           include: {
             listing: {
               select: {
@@ -249,6 +268,7 @@ export async function POST(request: Request) {
                 slug: true,
                 category: true,
                 priceKobo: true,
+                totalQuantity: true,
                 pricingUnit: true,
               },
             },
@@ -258,65 +278,38 @@ export async function POST(request: Request) {
         created = true;
       }
 
-      return {
-        cartItem,
-        created,
-      };
+      return { cartItem, created };
     });
 
-    // 6. RETURN RESPONSE
     const response = NextResponse.json(
       {
         message: result.created
           ? "Listing added to cart successfully."
           : "Cart quantity updated successfully.",
-
         data: {
           id: result.cartItem.id,
-
           listing: result.cartItem.listing,
-
           quantity: result.cartItem.quantity,
-
           startDate: result.cartItem.startDate,
           endDate: result.cartItem.endDate,
-
           lineTotalKobo:
-            result.cartItem.listing.priceKobo *
-            result.cartItem.quantity,
+            result.cartItem.listing.priceKobo * result.cartItem.quantity,
         },
       },
-      {
-        status: result.created ? 201 : 200,
-      }
+      { status: result.created ? 201 : 200 }
     );
 
-    // Save guest ID in an HTTP-only cookie.
     if (newGuestId) {
-      response.cookies.set(
-        GUEST_CART_COOKIE_NAME,
-        newGuestId,
-        {
-          httpOnly: true,
-
-          secure:
-            process.env.NODE_ENV === "production",
-
-          sameSite: "lax",
-
-          path: "/",
-
-          maxAge: GUEST_CART_DURATION_SECONDS,
-        }
-      );
+      const cookieOptions = await getAppCookieOptions(request);
+      response.cookies.set(GUEST_CART_COOKIE_NAME, newGuestId, {
+        ...cookieOptions,
+        maxAge: GUEST_CART_DURATION_SECONDS,
+      });
     }
 
     return response;
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message === "CART_QUANTITY_LIMIT"
-    ) {
+    if (error instanceof Error && error.message === "CART_QUANTITY_LIMIT") {
       return NextResponse.json(
         {
           message:
@@ -326,12 +319,23 @@ export async function POST(request: Request) {
       );
     }
 
+    if (
+      error instanceof Error &&
+      error.message === "INSUFFICIENT_INVENTORY"
+    ) {
+      return NextResponse.json(
+        {
+          message:
+            "Not enough units are available for the selected dates.",
+        },
+        { status: 409 }
+      );
+    }
+
     console.error("Add to cart API error:", error);
 
     return NextResponse.json(
-      {
-        message: "Could not add listing to cart.",
-      },
+      { message: "Could not add listing to cart." },
       { status: 500 }
     );
   }

@@ -1,18 +1,21 @@
-
 import { randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+import { getAppCookieOptions } from "@/app/lib/cookies";
 import { db } from "@/app/lib/db";
 import { getCurrentUser } from "@/app/lib/session";
+import {
+  checkListingAvailability,
+  GUEST_CART_COOKIE_NAME,
+  parseBookingDate,
+} from "@/app/lib/booking";
 
 export const runtime = "nodejs";
 
-const GUEST_CART_COOKIE_NAME = "flamingo_guest_cart";
-
 const GUEST_CART_DURATION_SECONDS = 30 * 24 * 60 * 60;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const currentUser = await getCurrentUser();
     const cookieStore = await cookies();
@@ -33,6 +36,7 @@ export async function GET() {
               slug: true,
               category: true,
               priceKobo: true,
+              totalQuantity: true,
               pricingUnit: true,
               status: true,
               isAvailable: true,
@@ -65,9 +69,7 @@ export async function GET() {
         include: includeItems,
       });
     } else {
-      let guestId = cookieStore.get(
-        GUEST_CART_COOKIE_NAME
-      )?.value;
+      let guestId = cookieStore.get(GUEST_CART_COOKIE_NAME)?.value;
 
       if (!guestId) {
         guestId = randomBytes(32).toString("hex");
@@ -82,28 +84,62 @@ export async function GET() {
       });
     }
 
-    const items = cart.items.map((item) => ({
-      id: item.id,
-      listing: {
-        id: item.listing.id,
-        title: item.listing.title,
-        slug: item.listing.slug,
-        category: item.listing.category,
-        priceKobo: item.listing.priceKobo,
-        pricingUnit: item.listing.pricingUnit,
-        status: item.listing.status,
-        isAvailable: item.listing.isAvailable,
-        vendor: {
-          id: item.listing.vendorProfile.id,
-          businessName: item.listing.vendorProfile.businessName,
-        },
-      },
-      quantity: item.quantity,
-      isSelected: item.isSelected,
-      startDate: item.startDate,
-      endDate: item.endDate,
-      lineTotalKobo: item.listing.priceKobo * item.quantity,
-    }));
+    const items = await Promise.all(
+      cart.items.map(async (item) => {
+        const parsedStart = parseBookingDate(item.startDate);
+        const parsedEnd = parseBookingDate(item.endDate);
+        const hasRequiredBookingDetails = Boolean(
+          parsedStart && parsedEnd && item.quantity >= 1
+        );
+
+        let availability = {
+          available:
+            item.listing.status === "ACTIVE" && item.listing.isAvailable,
+          remainingQuantity: item.listing.totalQuantity ?? 1,
+          reason: null as string | null,
+        };
+
+        if (parsedStart && parsedEnd) {
+          const check = await checkListingAvailability(db, {
+            listingId: item.listing.id,
+            startDate: parsedStart,
+            endDate: parsedEnd,
+            quantity: item.quantity,
+          });
+          availability = {
+            available: check.available,
+            remainingQuantity: check.remainingQuantity,
+            reason: check.reason,
+          };
+        }
+
+        return {
+          id: item.id,
+          listing: {
+            id: item.listing.id,
+            title: item.listing.title,
+            slug: item.listing.slug,
+            category: item.listing.category,
+            priceKobo: item.listing.priceKobo,
+            totalQuantity: item.listing.totalQuantity ?? 1,
+            pricingUnit: item.listing.pricingUnit,
+            status: item.listing.status,
+            isAvailable: item.listing.isAvailable,
+            vendor: {
+              id: item.listing.vendorProfile.id,
+              businessName: item.listing.vendorProfile.businessName,
+            },
+          },
+          quantity: item.quantity,
+          isSelected: item.isSelected,
+          startDate: item.startDate,
+          endDate: item.endDate,
+          hasRequiredBookingDetails,
+          availability,
+          lineTotalKobo: item.listing.priceKobo * item.quantity,
+        };
+      })
+    );
 
     const subtotalKobo = items.reduce(
       (total, item) => total + item.lineTotalKobo,
@@ -143,17 +179,11 @@ export async function GET() {
     });
 
     if (newGuestId) {
-      response.cookies.set(
-        GUEST_CART_COOKIE_NAME,
-        newGuestId,
-        {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          path: "/",
-          maxAge: GUEST_CART_DURATION_SECONDS,
-        }
-      );
+      const cookieOptions = await getAppCookieOptions(request);
+      response.cookies.set(GUEST_CART_COOKIE_NAME, newGuestId, {
+        ...cookieOptions,
+        maxAge: GUEST_CART_DURATION_SECONDS,
+      });
     }
 
     return response;

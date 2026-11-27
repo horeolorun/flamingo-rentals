@@ -1,6 +1,10 @@
 import { createHash, randomBytes } from "crypto";
 import { cookies } from "next/headers";
 
+import {
+  getAppCookieOptions,
+  getExpiredCookieOptions,
+} from "./cookies";
 import { db } from "./db";
 
 const SESSION_COOKIE_NAME = "flamingo_session";
@@ -32,20 +36,13 @@ export async function createSession(userId: string) {
   });
 
   const cookieStore = await cookies();
+  const cookieOptions = await getAppCookieOptions();
 
   cookieStore.set(
     SESSION_COOKIE_NAME,
     token,
     {
-      httpOnly: true,
-
-      secure:
-        process.env.NODE_ENV === "production",
-
-      sameSite: "lax",
-
-      path: "/",
-
+      ...cookieOptions,
       expires: expiresAt,
     }
   );
@@ -114,5 +111,6 @@ export async function deleteCurrentSession() {
     });
   }
 
-  cookieStore.delete(SESSION_COOKIE_NAME);
+  const expiredOptions = await getExpiredCookieOptions();
+  cookieStore.set(SESSION_COOKIE_NAME, "", expiredOptions);
 }

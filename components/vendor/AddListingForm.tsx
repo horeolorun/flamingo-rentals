@@ -12,6 +12,7 @@ export default function AddListingForm() {
   const [category, setCategory] = useState("");
   const [priceNaira, setPriceNaira] = useState("");
   const [pricingUnit, setPricingUnit] = useState("");
+  const [totalQuantity, setTotalQuantity] = useState("1");
 
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -22,6 +23,7 @@ export default function AddListingForm() {
     setError("");
 
     const price = Number(priceNaira);
+    const parsedQuantity = Number.parseInt(totalQuantity, 10);
 
     if (!title.trim()) {
       setError("Please enter a listing name.");
@@ -35,6 +37,11 @@ export default function AddListingForm() {
 
     if (!Number.isFinite(price) || price <= 0) {
       setError("Please enter a valid price.");
+      return;
+    }
+
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1) {
+      setError("Total available units must be at least 1.");
       return;
     }
 
@@ -52,6 +59,7 @@ export default function AddListingForm() {
           category,
           priceKobo: Math.round(price * 100),
           pricingUnit: pricingUnit.trim(),
+          totalQuantity: parsedQuantity,
         }),
       });
 
@@ -188,6 +196,32 @@ export default function AddListingForm() {
             className={inputClasses}
           />
         </div>
+      </div>
+
+      <div>
+        <label
+          htmlFor="totalQuantity"
+          className="block text-sm font-semibold text-gray-700"
+        >
+          Total available units
+        </label>
+
+        <input
+          id="totalQuantity"
+          type="number"
+          min="1"
+          max="9999"
+          step="1"
+          value={totalQuantity}
+          onChange={(event) => setTotalQuantity(event.target.value)}
+          placeholder="1"
+          className={inputClasses}
+        />
+
+        <p className="mt-1.5 text-xs text-gray-500">
+          Use 1 for single services/packages or your stock count for physical
+          rental items.
+        </p>
       </div>
 
       <div className="flex items-center justify-end gap-4 border-t border-border pt-6">

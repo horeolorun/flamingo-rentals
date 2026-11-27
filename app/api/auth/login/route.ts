@@ -7,7 +7,9 @@ import { compare } from "bcryptjs";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { getAppCookieOptions } from "@/app/lib/cookies";
 import { db } from "@/app/lib/db";
+import { mergeGuestCartToUser } from "@/app/lib/booking";
 
 export const runtime = "nodejs";
 
@@ -201,24 +203,24 @@ export async function POST(
     /*
       Replace the browser cookie.
     */
+    const cookieOptions =
+      await getAppCookieOptions(
+        request
+      );
+
     cookieStore.set(
       SESSION_COOKIE_NAME,
       token,
       {
-        httpOnly: true,
-
-        secure:
-          process.env.NODE_ENV ===
-          "production",
-
-        sameSite: "lax",
-
-        path: "/",
-
+        ...cookieOptions,
         expires:
           expiresAt,
       }
     );
+
+    if (user.role === "CUSTOMER") {
+      await mergeGuestCartToUser(user.id);
+    }
 
     return NextResponse.json({
       success: true,

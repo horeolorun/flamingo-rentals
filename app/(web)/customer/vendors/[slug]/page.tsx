@@ -84,7 +84,7 @@ export default async function VendorPage({
 
           <div className="relative h-[320px] overflow-hidden rounded-3xl">
             <Image
-              src="/home/hero-venue.jpg"
+              src={vendor.logoUrl || "/home/hero-venue.jpg"}
               alt={businessName}
               fill
               priority
@@ -192,6 +192,10 @@ export default async function VendorPage({
 
                   <AddToCartButton
                     listingId={listing.id}
+                    listingTitle={listing.title}
+                    priceKobo={listing.priceKobo}
+                    pricingUnit={listing.pricingUnit}
+                    totalQuantity={listing.totalQuantity}
                     canAddToCart={canAddToCart}
                   />
                 </article>
