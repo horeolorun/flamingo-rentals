@@ -57,6 +57,21 @@ enum BookingStatus {
   COMPLETED
 }
 
+enum BookingCancellationActor {
+  CUSTOMER
+  VENDOR
+  ADMIN
+  SYSTEM
+}
+
+enum RefundStatus {
+  NOT_REQUIRED
+  PENDING
+  PROCESSING
+  REFUNDED
+  FAILED
+}
+
 enum BundleStatus {
   DRAFT
   ACTIVE
@@ -129,13 +144,6 @@ model VendorProfile {
   userId String @unique
 
   businessName String?
-
-  // Vendor wallets
-  availableWalletId String? @unique
-  pendingWalletId   String? @unique
-
-  availableWallet Wallet? @relation("VendorAvailableWallet", fields: [availableWalletId], references: [id], onDelete: Restrict)
-  pendingWallet   Wallet? @relation("VendorPendingWallet", fields: [pendingWalletId], references: [id], onDelete: Restrict)
 
   // Vendor branding
   logoUrl    String?
@@ -260,61 +268,6 @@ model Listing {
   @@index([category, priceKobo])
   vendorBundleItems VendorBundleItem[]
 cartBundleItems  CartBundleItem[]
-}
-
-model Wallet {
-  id String @id @default(cuid())
-
-  purpose  WalletPurpose
-  currency String       @default("NGN")
-  status   WalletStatus @default(ACTIVE)
-
-  // Cached projection of the ledger balance
-  balance Decimal @default(0) @db.Decimal(19, 4)
-
-  // Minimum permitted balance
-  minimumBalance Decimal @default(0) @db.Decimal(19, 4)
-
-  transfersAllowed Boolean @default(false)
-
-  // Optimistic locking
-  version Int @default(0)
-
-  // Wallet ownership relationships
-  customerAvailableOf User?          @relation("UserAvailableWallet")
-  customerDepositOf   User?          @relation("UserDepositWallet")
-  vendorAvailableOf   VendorProfile? @relation("VendorAvailableWallet")
-  vendorPendingOf     VendorProfile? @relation("VendorPendingWallet")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([purpose])
-  @@index([status])
-}
-
-model Statement {
-  id String @id @default(cuid())
-
-  // Scalar reference; database foreign key is managed by migration SQL
-  walletId String
-
-  inflow  Decimal @default(0) @db.Decimal(19, 4)
-  outflow Decimal @default(0) @db.Decimal(19, 4)
-
-  balance Decimal @db.Decimal(19, 4)
-
-  narration String
-  reference String?
-
-  transactionId     String?
-  transactionUnitId String? @unique
-
-  postedAt  DateTime @default(now())
-  createdAt DateTime @default(now())
-
-  @@index([walletId, postedAt])
-  @@index([transactionId])
 }
 
 model VendorAvailabilityBlock {
