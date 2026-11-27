@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { db } from "@/app/lib/db";
+import { db, ensureSampleVendors } from "@/app/lib/db";
 
 export const runtime = "nodejs";
 
@@ -15,6 +15,7 @@ export async function GET(
   { params }: RouteContext
 ) {
   try {
+    await ensureSampleVendors();
     const { slug } = await params;
 
     const profile =
@@ -78,7 +79,7 @@ export async function GET(
           profile.listings.length,
 
         imageUrl:
-          "/home/hero-venue.jpg",
+          profile.logoUrl || "/home/hero-venue.jpg",
 
         listings:
           profile.listings.map(

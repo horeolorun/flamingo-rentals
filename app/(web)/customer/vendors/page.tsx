@@ -4,8 +4,10 @@ import Link from "next/link";
 import VendorCard from "@/components/VendorCard";
 import VendorDiscoveryFilters from "./VendorDiscoveryFilters";
 import { vendorSegments } from "@/app/data/vendorSegments";
-import { db } from "@/app/lib/db";
+import { db, ensureSampleVendors } from "@/app/lib/db";
 import { getCurrentUser } from "@/app/lib/session";
+
+export const dynamic = "force-dynamic";
 
 type VendorsPageProps = {
   searchParams: Promise<{
@@ -68,6 +70,8 @@ function getInitials(name: string) {
 export default async function VendorsPage({
   searchParams,
 }: VendorsPageProps) {
+  await ensureSampleVendors();
+
   const [params, currentUser] = await Promise.all([
     searchParams,
     getCurrentUser(),
@@ -98,9 +102,14 @@ export default async function VendorsPage({
       ? currentUser.city ?? ""
       : "";
 
-  const selectedState = hasStateParam
+  const rawSelectedState = hasStateParam
     ? String(params.state ?? "").trim()
     : savedState;
+
+  const selectedState =
+    rawSelectedState === "FCT"
+      ? "Federal Capital Territory"
+      : rawSelectedState;
 
   const selectedCity = hasCityParam
     ? String(params.city ?? "").trim()
@@ -262,12 +271,23 @@ export default async function VendorsPage({
               </p>
             </div>
 
-            <p className="text-sm font-medium text-[#737373]">
-              Showing vendors in{" "}
-              <span className="font-bold text-[#B60152]">
-                {locationLabel}
-              </span>
-            </p>
+            <div className="flex flex-wrap items-center gap-3 text-sm font-medium text-[#737373]">
+              <p>
+                Showing vendors in{" "}
+                <span className="font-bold text-[#B60152]">
+                  {locationLabel}
+                </span>
+              </p>
+
+              {(selectedState || selectedCity) && (
+                <Link
+                  href="/customer/vendors?state=&city="
+                  className="rounded-full border border-[#EAD5DF] bg-white px-3 py-1 text-xs font-semibold text-[#B60152] transition hover:bg-[#FCEBF2]"
+                >
+                  View all locations
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </section>
@@ -461,10 +481,10 @@ export default async function VendorsPage({
               </p>
 
               <Link
-                href="/customer/vendors"
+                href="/customer/vendors?state=&city="
                 className="mt-6 inline-flex rounded-xl bg-[#B60152] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#C40032]"
               >
-                Clear filters
+                Show all vendors & locations
               </Link>
             </div>
           )}

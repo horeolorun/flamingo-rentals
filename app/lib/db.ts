@@ -88,10 +88,67 @@ function createSeededStore(): InMemoryStore {
   };
 }
 
+function syncSeededStore(store: InMemoryStore) {
+  const baseTime = Date.now();
+  const existingUserIds = new Set(store.users.map((u) => u.id));
+  const existingProfileIds = new Set(store.vendorProfiles.map((p) => p.id));
+  const existingListingIds = new Set(store.listings.map((l) => l.id));
+
+  SAMPLE_VENDORS.forEach((entry, vendorIndex) => {
+    const timestamp = new Date(baseTime - vendorIndex * 60_000);
+
+    if (!existingUserIds.has(entry.user.id)) {
+      store.users.push({
+        ...entry.user,
+        passwordHash: null,
+        marketingEmailsOptIn: false,
+        marketingEmailsOptInAt: null,
+        role: "VENDOR",
+        status: "ACTIVE",
+        emailVerifiedAt: timestamp,
+        phoneVerifiedAt: null,
+        availableWalletId: null,
+        depositWalletId: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+    }
+
+    if (!existingProfileIds.has(entry.profile.id)) {
+      store.vendorProfiles.push({
+        ...entry.profile,
+        userId: entry.user.id,
+        kycStatus: "VERIFIED",
+        payoutStatus: "VERIFIED",
+        availableWalletId: null,
+        pendingWalletId: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+    }
+
+    entry.listings.forEach((listing, listingIndex) => {
+      if (!existingListingIds.has(listing.id)) {
+        const listingTime = new Date(timestamp.getTime() - listingIndex * 1000);
+        store.listings.push({
+          ...listing,
+          vendorProfileId: entry.profile.id,
+          status: "ACTIVE",
+          isAvailable: true,
+          createdAt: listingTime,
+          updatedAt: listingTime,
+        });
+      }
+    });
+  });
+}
+
 function getStore(): InMemoryStore {
   const g = globalThis as unknown as { __flamingoStore?: InMemoryStore };
   if (!g.__flamingoStore) {
     g.__flamingoStore = createSeededStore();
+  } else {
+    syncSeededStore(g.__flamingoStore);
   }
   return g.__flamingoStore;
 }
@@ -579,10 +636,118 @@ function createPrismaClient(): PrismaClient {
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
+  flamingoSeedPromise?: Promise<void>;
 };
 
 export const db = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = db;
+}
+
+/**
+ * Ensures sample vendors and listings exist in whichever backing store is
+ * active (in-memory or PostgreSQL), running at most once per process and
+ * without modifying wallet or statement records.
+ */
+export async function ensureSampleVendors(): Promise<void> {
+  if (!process.env.DATABASE_URL) {
+    getStore();
+    return;
+  }
+
+  if (!globalForPrisma.flamingoSeedPromise) {
+    globalForPrisma.flamingoSeedPromise = (async () => {
+      try {
+        const existingProfiles = await db.vendorProfile.findMany({
+          where: {
+            id: { in: SAMPLE_VENDORS.map((v) => v.profile.id) },
+          },
+          select: { id: true },
+        });
+
+        if (existingProfiles.length >= SAMPLE_VENDORS.length) {
+          return;
+        }
+
+        const now = new Date();
+
+        for (const entry of SAMPLE_VENDORS) {
+          const user = await db.user.upsert({
+            where: { email: entry.user.email },
+            update: {},
+            create: {
+              id: entry.user.id,
+              fullName: entry.user.fullName,
+              state: entry.user.state,
+              city: entry.user.city,
+              email: entry.user.email,
+              phone: entry.user.phone,
+              passwordHash: null,
+              marketingEmailsOptIn: false,
+              role: "VENDOR",
+              status: "ACTIVE",
+              emailVerifiedAt: now,
+            },
+          });
+
+          const profile = await db.vendorProfile.upsert({
+            where: { userId: user.id },
+            update: {
+              logoUrl: entry.profile.logoUrl,
+              isFeatured: entry.profile.isFeatured,
+              segments: entry.profile.segments,
+              kycStatus: "VERIFIED",
+              payoutStatus: "VERIFIED",
+            },
+            create: {
+              id: entry.profile.id,
+              userId: user.id,
+              businessName: entry.profile.businessName,
+              logoUrl: entry.profile.logoUrl,
+              isFeatured: entry.profile.isFeatured,
+              primaryCategory: entry.profile.primaryCategory,
+              segments: entry.profile.segments,
+              country: entry.profile.country,
+              state: entry.profile.state,
+              city: entry.profile.city,
+              averageRating: entry.profile.averageRating,
+              reviewCount: entry.profile.reviewCount,
+              kycStatus: "VERIFIED",
+              payoutStatus: "VERIFIED",
+            },
+          });
+
+          for (const listing of entry.listings) {
+            await db.listing.upsert({
+              where: {
+                vendorProfileId_slug: {
+                  vendorProfileId: profile.id,
+                  slug: listing.slug,
+                },
+              },
+              update: {},
+              create: {
+                id: listing.id,
+                vendorProfileId: profile.id,
+                title: listing.title,
+                slug: listing.slug,
+                description: listing.description,
+                category: listing.category,
+                priceKobo: listing.priceKobo,
+                totalQuantity: listing.totalQuantity,
+                pricingUnit: listing.pricingUnit,
+                status: "ACTIVE",
+                isAvailable: true,
+              },
+            });
+          }
+        }
+      } catch (error) {
+        console.warn("Could not auto-seed sample vendors:", error);
+      }
+    })();
+  }
+
+  await globalForPrisma.flamingoSeedPromise;
 }

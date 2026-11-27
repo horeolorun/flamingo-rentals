@@ -1,40 +1,14 @@
-export const vendors = [
-  {
-    id: "vendor-001",
-    businessName: "Royal Events & Rentals",
-    slug: "royal-events-rentals",
-    category: "Rentals",
-    city: "Lagos",
-    region: "Lagos",
-    rating: 4.8,
-    customerCount: 320,
-    imageUrl: "/vendors/royal-events.jpg",
-    verified: true,
-  },
+import { SAMPLE_VENDORS } from "./seedVendors";
 
-  {
-    id: "vendor-002",
-    businessName: "Tasty Bites Catering",
-    slug: "tasty-bites-catering",
-    category: "Catering",
-    city: "Lagos",
-    region: "Lagos",
-    rating: 4.7,
-    customerCount: 280,
-    imageUrl: "/vendors/tasty-bites.jpg",
-    verified: true,
-  },
-
-  {
-    id: "vendor-003",
-    businessName: "VibeTunes Events",
-    slug: "vibetunes-events",
-    category: "Sound",
-    city: "Lagos",
-    region: "Lagos",
-    rating: 4.8,
-    customerCount: 410,
-    imageUrl: "/vendors/vibetunes.jpg",
-    verified: true,
-  },
-];
+export const vendors = SAMPLE_VENDORS.map((entry) => ({
+  id: entry.profile.id,
+  businessName: entry.profile.businessName,
+  slug: entry.profile.id,
+  category: entry.profile.primaryCategory,
+  city: entry.profile.city,
+  region: entry.profile.state,
+  rating: entry.profile.averageRating,
+  customerCount: entry.profile.reviewCount,
+  imageUrl: entry.profile.logoUrl,
+  verified: true,
+}));

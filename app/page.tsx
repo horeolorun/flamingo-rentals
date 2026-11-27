@@ -4,7 +4,9 @@ import Link from "next/link";
 
 import SearchBar from "@/components/SearchBar";
 import VendorCard from "@/components/VendorCard";
-import { db } from "@/app/lib/db";
+import { db, ensureSampleVendors } from "@/app/lib/db";
+
+export const dynamic = "force-dynamic";
 
 const categories = [
   {
@@ -52,6 +54,8 @@ export default async function Home() {
     "Popular Vendors" or "Top Rated Vendors"
     once ratings and completed bookings exist.
   */
+  await ensureSampleVendors();
+
   const vendorProfiles = await db.vendorProfile.findMany({
     include: {
       user: true,

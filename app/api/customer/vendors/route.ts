@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { db } from "@/app/lib/db";
+import { db, ensureSampleVendors } from "@/app/lib/db";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   try {
+    await ensureSampleVendors();
+
     const vendorProfiles =
       await db.vendorProfile.findMany({
         include: {

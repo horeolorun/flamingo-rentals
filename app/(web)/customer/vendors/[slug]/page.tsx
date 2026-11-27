@@ -4,7 +4,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AddToCartButton from "@/components/customer/AddToCartButton";
 
-import { db } from "@/app/lib/db";
+import { db, ensureSampleVendors } from "@/app/lib/db";
+
+export const dynamic = "force-dynamic";
 
 type VendorPageProps = {
   params: Promise<{
@@ -23,6 +25,7 @@ function formatNaira(priceKobo: number) {
 export default async function VendorPage({
   params,
 }: VendorPageProps) {
+  await ensureSampleVendors();
   const { slug } = await params;
 
   // Retrieve the vendor, account information and active listings.
